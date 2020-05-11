@@ -1,9 +1,9 @@
 [package]
-name = "cloud-conveyor-core"
+name = "cloud-conveyor-cli"
 version = "0.1.0"
 authors = ["Zach Probst <zprobst@resilientvitality.com>"]
 edition = "2018"
 
 [dependencies]
-yaml-rust = "0.4"
-failure = "0.1.8"
+clap = "2.33.0"
+cloud-conveyor-core = { path = "../cloud-conveyor-core" }

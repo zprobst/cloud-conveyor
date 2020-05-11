@@ -1,7 +1,7 @@
 //! Defines core structures and interal abstractions for Cloud Conveyor.
 //! This is really an internal only crate for cloud conveyor and not meant as a standard library.
 
-mod yaml;
+pub mod yaml;
 
 /// Defines an group of approvers that use a single service.
 /// Currently, on the slack type is supported.
@@ -15,25 +15,26 @@ pub enum ApprovalGroup {
 pub enum ApprovalStatus {
     /// The approval request has been set to all of the particpants but nobody has responded yet.
     Pending,
-    
+
     /// The state of the stage when evaluating the need for approval indicated that approval was not
     /// requred. This is an "allowed status"
     NotNeeded,
-    
+
     /// This state indicates that somebody approved the deployment and stores the time and by.
-    Approved {by: String},
+    Approved { by: String },
 
-    /// The state indicates  that somebody explicitly denied the application to continue. 
+    /// The state indicates  that somebody explicitly denied the application to continue.
     /// As a result, the application cannot be deployed.
-    Rejected {by: String},
+    Rejected { by: String },
 
-    /// The approval status when first created. This may become Pending or Not Needed 
+    /// The approval status when first created. This may become Pending or Not Needed
     /// depending on whether or not the stage defintion includes any required approvers.
     Unasked,
 }
 
 /// An account with a cloud provider with a cloud provider and the types to bind information'
 /// for given the type of cloud provider.
+#[derive(Clone)]
 pub enum Account {
     Aws {
         /// The name of the aws account in question.
@@ -45,13 +46,13 @@ pub enum Account {
     },
 }
 
-/// Defines the kinds of triggers in the application that allow for 
+/// Defines the kinds of triggers in the application that allow for
 /// things to happen for user actions. For instance, pr deploys, merges to branches, etc
 /// given the information provided by a source control provider such as github.
 pub enum Trigger {
     /// PR Builds an deploys. When they occur, new temporary stacks are created and updated
     /// for the life of the pull request (or similar notion depending on the source provider). When
-    // Builds are implicitly true if deploys are true. 
+    // Builds are implicitly true if deploys are true.
     Pr {
         /// Whether or not a temporary stack should be created, updated, deleted in line
         /// with the lifetime of the PR.
@@ -59,13 +60,13 @@ pub enum Trigger {
     },
 
     /// When a merge is made to a branch. Optional filter on what kind of branch
-    /// the merge came from as well. 
+    /// the merge came from as well.
     Merge {
         ///The pattern of branches to apply to that are getting merged into; e.g master.
         /// Can be any valid regular expression.
         to_branch: String,
 
-        /// The pattern (if any) of branches to apply to that are related to the 
+        /// The pattern (if any) of branches to apply to that are related to the
         from_branch: Option<String>,
 
         /// The names of the stages that apply to the merge pattern.
@@ -84,7 +85,7 @@ pub enum Trigger {
 }
 
 ///  The stage of the application. This is specific an environment.
-pub struct Stage<'a> {
+pub struct Stage {
     /// The name of the stage. e.g "dev", "stage", "prod"
     pub name: String,
 
@@ -92,14 +93,14 @@ pub struct Stage<'a> {
     pub approval_group: Option<ApprovalGroup>,
 
     /// The reference to the accout that the stage belongs to.
-    pub account: &'a Account,
+    pub account:Account,
 }
 
-impl<'a> Stage<'a> {
+impl Stage {
     /// Defines a new stage given the a new application, Since the reference to
     /// app is not mutable, this does not add the stage to the app. However, the stage is
     /// does contain a reference to the account.
-    pub fn from_pr_number(app: &'a Application, number: u32) -> Self {
+    pub fn from_pr_number(app: &Application, number: u32) -> Self {
         // TODO: Figure out a better way than a panic for applications that do not have
         // a default stage; either we make it an invariant or we need to allow the user
         // to specify the account to use for prs and make sure we handle when they don't
@@ -110,18 +111,18 @@ impl<'a> Stage<'a> {
         Self {
             name: format!("pr-{}", number),
             approval_group: None,
-            account,
+            account: account.clone(),
         }
     }
 }
 
 /// Defines the application that is using Cloud Conveyor.
-pub struct Application<'a> {
+pub struct Application {
     /// The org that the application is a part of. This will likely be the owner
     /// of the project on a source control platform like github.
     pub org: String,
 
-    /// The application name of the code.  This is likely the 
+    /// The application name of the code.  This is likely the
     pub app: String,
 
     /// The  different approval groups that are in the application
@@ -134,13 +135,13 @@ pub struct Application<'a> {
     pub triggers: Vec<Trigger>,
 
     /// The triggers of the applicaiton.
-    pub stages: Vec<Stage<'a>>,
+    pub stages: Vec<Stage>,
 
     /// The internal index to the  account that is defualt.
     pub(crate) default_account_index: Option<usize>,
 }
 
-impl <'a> Application<'a> {
+impl Application {
     /// Gets the default account for this application if there is one.
     pub fn default_account(&self) -> Option<&Account> {
         self.default_account_index.map(|i| {
@@ -152,17 +153,17 @@ impl <'a> Application<'a> {
 }
 
 /// Creates a new Deployment for a specific application.
-pub struct Deployment<'application, 'trigger> {
+pub struct Deployment<'trigger> {
     ///  The application that is being deployed.
-    pub app: &'application Application<'application>,
+    pub app: Application,
 
     /// The stage of the application that is being deployed,
-    pub stage: &'application Stage<'application>,
-    
+    pub stage: Stage,
+
     /// The Code Sha that is being deployed.
     pub sha: String,
 
-    /// A flag indicating the deployment is currently running. 
+    /// A flag indicating the deployment is currently running.
     pub is_running: bool,
 
     /// A flag indicating the deployment was a success. If the deployment

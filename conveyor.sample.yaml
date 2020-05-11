@@ -3,3 +3,8 @@
 org: resilient-vitality
 app: api
 
+approvals:
+  - type: slack
+    people: 
+      - "@zprobst"
+      - "@jsmith"
