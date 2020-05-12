@@ -5,6 +5,7 @@ pub mod yaml;
 
 /// Defines an group of approvers that use a single service.
 /// Currently, on the slack type is supported.
+#[derive(Debug)]
 pub enum ApprovalGroup {
     /// The Slack approval pattern. When approval is needed, each of the people in the people
     /// vector should get a message that allows them to approve or deny a deployment.
@@ -12,6 +13,7 @@ pub enum ApprovalGroup {
 }
 
 /// Defines the current status of an approval for a certain application deployment.
+#[derive(Debug)]
 pub enum ApprovalStatus {
     /// The approval request has been set to all of the particpants but nobody has responded yet.
     Pending,
@@ -34,7 +36,7 @@ pub enum ApprovalStatus {
 
 /// An account with a cloud provider with a cloud provider and the types to bind information'
 /// for given the type of cloud provider.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Account {
     Aws {
         /// The name of the aws account in question.
@@ -46,9 +48,18 @@ pub enum Account {
     },
 }
 
+impl Account {
+    pub fn is_default(&self) -> bool {
+        match self {
+            Account::Aws { name, id, regions } => name == "default",
+        }
+    }
+}
+
 /// Defines the kinds of triggers in the application that allow for
 /// things to happen for user actions. For instance, pr deploys, merges to branches, etc
 /// given the information provided by a source control provider such as github.
+#[derive(Debug)]
 pub enum Trigger {
     /// PR Builds an deploys. When they occur, new temporary stacks are created and updated
     /// for the life of the pull request (or similar notion depending on the source provider). When
@@ -85,6 +96,7 @@ pub enum Trigger {
 }
 
 ///  The stage of the application. This is specific an environment.
+#[derive(Debug)]
 pub struct Stage {
     /// The name of the stage. e.g "dev", "stage", "prod"
     pub name: String,
@@ -93,7 +105,7 @@ pub struct Stage {
     pub approval_group: Option<ApprovalGroup>,
 
     /// The reference to the accout that the stage belongs to.
-    pub account:Account,
+    pub account: Account,
 }
 
 impl Stage {
@@ -117,6 +129,7 @@ impl Stage {
 }
 
 /// Defines the application that is using Cloud Conveyor.
+#[derive(Debug)]
 pub struct Application {
     /// The org that the application is a part of. This will likely be the owner
     /// of the project on a source control platform like github.
@@ -126,7 +139,7 @@ pub struct Application {
     pub app: String,
 
     /// The  different approval groups that are in the application
-    pub approval_group: Vec<ApprovalGroup>,
+    pub approval_groups: Vec<ApprovalGroup>,
 
     /// The list of accounts in the application
     pub accounts: Vec<Account>,
@@ -153,6 +166,7 @@ impl Application {
 }
 
 /// Creates a new Deployment for a specific application.
+#[derive(Debug)]
 pub struct Deployment<'trigger> {
     ///  The application that is being deployed.
     pub app: Application,
