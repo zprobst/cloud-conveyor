@@ -1,7 +1,7 @@
 //! Defines core structures and interal abstractions for Cloud Conveyor.
 //! This is really an internal only crate for cloud conveyor and not meant as a standard library.
 #![warn(missing_docs)]
-use serde::Deserialize;
+use serde::{Serialize, Deserialize};
 
 pub mod yaml;
 
@@ -11,7 +11,10 @@ pub mod yaml;
 pub enum ApprovalGroup {
     /// The Slack approval pattern. When approval is needed, each of the people in the people
     /// vector should get a message that allows them to approve or deny a deployment.
-    Slack { people: Vec<String> },
+    Slack { 
+        /// The slack handles "@zprobst" for the people who can approve with this group.
+        people: Vec<String> 
+    },
 }
 
 /// Defines the current status of an approval for a certain application deployment.
@@ -25,11 +28,17 @@ pub enum ApprovalStatus {
     NotNeeded,
 
     /// This state indicates that somebody approved the deployment and stores the time and by.
-    Approved { by: String },
+    Approved { 
+        /// The handle of the person who approved. 
+        by: String 
+    },
 
     /// The state indicates  that somebody explicitly denied the application to continue.
     /// As a result, the application cannot be deployed.
-    Rejected { by: String },
+    Rejected {
+         /// The handle of the person who approved.  
+        by: String 
+    },
 
     /// The approval status when first created. This may become Pending or Not Needed
     /// depending on whether or not the stage defintion includes any required approvers.
@@ -38,7 +47,7 @@ pub enum ApprovalStatus {
 
 /// An account with a cloud provider with a cloud provider and the types to bind information'
 /// for given the type of cloud provider.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Account {
     /// The name of the aws account in question.
     pub name: String,
@@ -49,10 +58,12 @@ pub struct Account {
 }
 
 impl Account {
-    pub fn is_default(&self) -> bool {
+    /// Checked if the accout could potentially be a default account.
+    pub fn is_candidate_for_default(&self) -> bool {
         self.is_named("default")
     }
 
+    ///  Check if the account is named a certain thing.
     pub fn is_named(&self, name: &str) -> bool {
         name == self.name
     }
@@ -61,7 +72,7 @@ impl Account {
 /// Defines the kinds of triggers in the application that allow for
 /// things to happen for user actions. For instance, pr deploys, merges to branches, etc
 /// given the information provided by a source control provider such as github.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Trigger {
     /// PR Builds an deploys. When they occur, new temporary stacks are created and updated
