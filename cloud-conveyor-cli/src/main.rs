@@ -23,6 +23,7 @@ fn main() {
     // we are good. If not, we are not good.
     if let Some(_) = matches.subcommand_matches(check_command_name) {
         match load_app_from_yaml() {
+            // TODO: Write out the error if there is one.
             Ok(_) => println!("Everything is good!"),
             Err(_) => eprintln!("Everything is NOT OK!"),
         }
