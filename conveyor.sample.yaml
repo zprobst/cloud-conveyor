@@ -1,5 +1,0 @@
-# To onboard a project, change this file and rename to conveyor.yaml. Then run 
-# clc onboard
-org: resilient-vitality
-app: api
-
