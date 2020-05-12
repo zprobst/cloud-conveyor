@@ -1,11 +1,13 @@
 //! Defines core structures and interal abstractions for Cloud Conveyor.
 //! This is really an internal only crate for cloud conveyor and not meant as a standard library.
+#![warn(missing_docs)]
+use serde::Deserialize;
 
 pub mod yaml;
 
 /// Defines an group of approvers that use a single service.
 /// Currently, on the slack type is supported.
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
 pub enum ApprovalGroup {
     /// The Slack approval pattern. When approval is needed, each of the people in the people
     /// vector should get a message that allows them to approve or deny a deployment.
@@ -13,7 +15,7 @@ pub enum ApprovalGroup {
 }
 
 /// Defines the current status of an approval for a certain application deployment.
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
 pub enum ApprovalStatus {
     /// The approval request has been set to all of the particpants but nobody has responded yet.
     Pending,
@@ -36,30 +38,31 @@ pub enum ApprovalStatus {
 
 /// An account with a cloud provider with a cloud provider and the types to bind information'
 /// for given the type of cloud provider.
-#[derive(Clone, Debug)]
-pub enum Account {
-    Aws {
-        /// The name of the aws account in question.
-        name: String,
-        /// The account number in aws.
-        id: usize,
-        /// The list of regions that should be deployed to in the application.
-        regions: Vec<String>,
-    },
+#[derive(Clone, Debug, Deserialize)]
+pub struct Account {
+    /// The name of the aws account in question.
+    pub name: String,
+    /// The account number in aws.
+    pub id: usize,
+    /// The list of regions that should be deployed to in the application.
+    pub regions: Vec<String>,
 }
 
 impl Account {
     pub fn is_default(&self) -> bool {
-        match self {
-            Account::Aws { name, id, regions } => name == "default",
-        }
+        self.is_named("default")
+    }
+
+    pub fn is_named(&self, name: &str) -> bool {
+        name == self.name
     }
 }
 
 /// Defines the kinds of triggers in the application that allow for
 /// things to happen for user actions. For instance, pr deploys, merges to branches, etc
 /// given the information provided by a source control provider such as github.
-#[derive(Debug)]
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Trigger {
     /// PR Builds an deploys. When they occur, new temporary stacks are created and updated
     /// for the life of the pull request (or similar notion depending on the source provider). When
@@ -75,13 +78,14 @@ pub enum Trigger {
     Merge {
         ///The pattern of branches to apply to that are getting merged into; e.g master.
         /// Can be any valid regular expression.
-        to_branch: String,
+        to: String,
 
         /// The pattern (if any) of branches to apply to that are related to the
-        from_branch: Option<String>,
+        from: Option<String>,
 
         /// The names of the stages that apply to the merge pattern.
-        stage_names: Vec<String>,
+        #[serde(rename = "deploy")]
+        stages: Vec<String>,
     },
 
     /// When a tag is pushed.
@@ -91,12 +95,13 @@ pub enum Trigger {
         pattern: String,
 
         /// The names of the stages that apply to the tag pattern.
-        stage_names: Vec<String>,
+        #[serde(rename = "deploy")]
+        stages: Vec<String>,
     },
 }
 
 ///  The stage of the application. This is specific an environment.
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
 pub struct Stage {
     /// The name of the stage. e.g "dev", "stage", "prod"
     pub name: String,
@@ -129,7 +134,7 @@ impl Stage {
 }
 
 /// Defines the application that is using Cloud Conveyor.
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
 pub struct Application {
     /// The org that the application is a part of. This will likely be the owner
     /// of the project on a source control platform like github.
@@ -138,20 +143,20 @@ pub struct Application {
     /// The application name of the code.  This is likely the
     pub app: String,
 
-    /// The  different approval groups that are in the application
-    pub approval_groups: Vec<ApprovalGroup>,
-
     /// The list of accounts in the application
     pub accounts: Vec<Account>,
 
-    /// The triggers of the applicaiton.
-    pub triggers: Vec<Trigger>,
+    /// The internal index to the  account that is defualt.
+    pub(crate) default_account_index: Option<usize>,
 
     /// The triggers of the applicaiton.
     pub stages: Vec<Stage>,
 
-    /// The internal index to the  account that is defualt.
-    pub(crate) default_account_index: Option<usize>,
+    /// The triggers of the applicaiton.
+    pub triggers: Vec<Trigger>,
+
+    /// The  different approval groups that are in the application
+    pub approval_groups: Vec<ApprovalGroup>
 }
 
 impl Application {

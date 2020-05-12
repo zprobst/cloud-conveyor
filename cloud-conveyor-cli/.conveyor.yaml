@@ -1,0 +1,42 @@
+# This will most likely match the group/repo in github.
+org: resilient-vitality
+app: api
+
+# Conveyor supports multiple accounts and curretly only aws.
+accounts:
+  - name: default
+    id: 123456789
+    regions:
+      - us-east-1
+      - us-west-1
+  - name: prod
+    id: 123456789
+    regions:
+      - us-east-1
+      - us-west-1
+  
+# Approvals are currently supported with slack.
+approvals:
+  prod:
+    type: slack
+    people:
+      - "@zprobst"
+      - "@jsmith"
+
+triggers:
+  - pr:
+      deploy: true
+  - merge:
+      to: master        # This can be any regular expression.
+      deploy: 
+        - stage
+  - tag:
+      pattern: semver   # Semver is a special value. This can be any regular expression.
+      deploy:
+        - prod
+
+stages:
+  - name: stage
+  - name: prod
+    approvers: prod
+    account: prod

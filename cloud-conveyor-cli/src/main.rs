@@ -21,10 +21,13 @@ fn main() {
 
     // Run the Check Command - try and load the file. If it succeeds,
     // we are good. If not, we are not good.
-    if let Some(_) = matches.subcommand_matches(check_command_name) {
+    if matches.subcommand_matches(check_command_name).is_some() {
         match load_app_from_yaml() {
             // TODO: Write out the error if there is one.
-            Ok(_) => println!("Everything is good!"),
+            Ok(app) => {
+                println!("{:?}", app);
+                println!("Everything is good!")
+            },
             Err(_) => eprintln!("Everything is NOT OK!"),
         }
     }
