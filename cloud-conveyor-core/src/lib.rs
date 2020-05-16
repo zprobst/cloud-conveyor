@@ -6,6 +6,7 @@
     missing_debug_implementations,
     intra_doc_link_resolution_failure
 )]
+use log::info;
 use serde::{Deserialize, Serialize};
 
 pub mod webhook;
@@ -329,6 +330,8 @@ impl Pipeline {
     pub fn add_action(mut self, action: Action) -> Self {
         if !self.pending_actions.contains(&action) {
             self.pending_actions.push(action);
+        } else {
+            info!("Action{:?} is already in pipeline. No need to add", action);
         }
 
         self

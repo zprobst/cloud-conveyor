@@ -16,6 +16,7 @@
 //! 3.) When a pull request is closed, we want to tear down the environment.
 //!
 use crate::{Action, Application, ArtifactProvider, Pipeline, Stage, Trigger};
+use log::info;
 use regex::Regex;
 use std::collections::HashMap;
 
@@ -108,6 +109,10 @@ fn add_build_and_deploy_stages<A: ArtifactProvider>(
         artifact_bucket: artifact_bucket.clone(),
         artifact_folder: artifact_folder.clone(),
     };
+    info!(
+        "Pushing build action for  for sha {:?} with action {:?} ",
+        sha, build_action
+    );
     let mut new_pipeline = pipeline.unwrap_or_default().add_action(build_action);
 
     // If the deployment should be done, we should do it. Add the step to the pipeline.
@@ -119,14 +124,22 @@ fn add_build_and_deploy_stages<A: ArtifactProvider>(
                 app_name: event.app.full_name(),
                 stage_name: stage.name.clone(),
             };
+            info!(
+                "Pushing approval required  for stage {:?} with action {:?} ",
+                stage, approval_action
+            );
             new_pipeline = new_pipeline.add_action(approval_action);
         }
 
         let deploy_action = Action::Deploy {
             artifact_bucket: artifact_bucket.clone(),
             artifact_folder: artifact_folder.clone(),
-            stage,
+            stage: stage.clone(),
         };
+        info!(
+            "Pushing deploy  action for stage {:?} with action {:?}",
+            stage, deploy_action
+        );
         new_pipeline = new_pipeline.add_action(deploy_action);
     }
 
@@ -150,6 +163,7 @@ fn handle_tag_trigger<A: ArtifactProvider>(
 
             let re = Regex::new(pattern).unwrap();
             if !re.is_match(tag.as_ref()) {
+                info!("Tag {:?} does not follow the pattern  {:?}", tag, pattern);
                 return pipeline;
             }
 
@@ -187,6 +201,10 @@ fn handle_merge_trigger<A: ArtifactProvider>(
             // invariant that all regexes will compile. So this unwrap should be okay.
             let regex = Regex::new(to_regex.as_ref()).unwrap();
             if !regex.is_match(to_branch.as_ref()) {
+                info!(
+                    "Branch {:?} does not match pattern {:?}",
+                    to_branch, to_regex
+                );
                 return pipeline;
             }
 
@@ -195,6 +213,10 @@ fn handle_merge_trigger<A: ArtifactProvider>(
             let regex =
                 Regex::new(from_regex.unwrap_or_else(|| String::from(".*")).as_ref()).unwrap();
             if !regex.is_match(from_branch.as_ref()) {
+                info!(
+                    "Branch {:?} does not match pattern {:?}",
+                    from_branch, regex
+                );
                 return pipeline;
             }
 
@@ -232,6 +254,11 @@ fn handle_pr_trigger<A: ArtifactProvider>(
             pr_number,
             sha,
         } => {
+            info!(
+                "Creating PR {:?} with deploy {:?}",
+                pr_number, should_deploy
+            );
+
             // If wes should deploy, we need a new stage to be created.
             let stages = if should_deploy {
                 let new_stage = Stage::from_pr_number(&event.app, pr_number);
@@ -250,6 +277,8 @@ fn handle_pr_trigger<A: ArtifactProvider>(
             pr_number,
             merged: _,
         } => {
+            info!("Completing PR {:?}", pr_number);
+
             // Scan for the stage in the application for the PR.
             let stage = event.app.stages.iter().find(|s| s.is_for_pr(pr_number));
 
@@ -274,6 +303,7 @@ fn handle_pr_trigger<A: ArtifactProvider>(
             sha,
         } => {
             // Scan for the stage in the application for the PR.
+            info!("Updating PR {:?}", pr_number);
             let stage = event
                 .app
                 .stages
@@ -308,12 +338,28 @@ fn event_to_pipeline<A: ArtifactProvider>(
     for trigger in event.app.triggers.clone() {
         match trigger {
             Trigger::Pr { deploy } => {
+                info!(
+                    "Processing PR Trigger with deploy set to {:?} for app {:?}",
+                    deploy,
+                    event.app.full_name()
+                );
                 result = handle_pr_trigger(result, deploy, event, artifact_provider);
             }
             Trigger::Merge { to, from, stages } => {
+                info!(
+                    "Processing merge trigger from {:?} to {:?} for app {:?}",
+                    from,
+                    to,
+                    event.app.full_name()
+                );
                 result = handle_merge_trigger(artifact_provider, result, event, to, from, stages);
             }
             Trigger::Tag { pattern, stages } => {
+                info!(
+                    "Processing tag trigger with pattern {:?} for app {:?}",
+                    pattern,
+                    event.app.full_name()
+                );
                 result = handle_tag_trigger(artifact_provider, result, event, pattern, stages);
             }
         }
