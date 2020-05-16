@@ -1,8 +1,14 @@
 //! Defines core structures and interal abstractions for Cloud Conveyor.
 //! This is really an internal only crate for cloud conveyor and not meant as a standard library.
-#![warn(missing_docs)]
-use serde::{Serialize, Deserialize};
+#![warn(
+    missing_docs,
+    rust_2018_idioms,
+    missing_debug_implementations,
+    intra_doc_link_resolution_failure
+)]
+use serde::{Deserialize, Serialize};
 
+pub mod webhook;
 pub mod yaml;
 
 /// Defines an group of approvers that use a single service.
@@ -11,9 +17,9 @@ pub mod yaml;
 pub enum ApprovalGroup {
     /// The Slack approval pattern. When approval is needed, each of the people in the people
     /// vector should get a message that allows them to approve or deny a deployment.
-    Slack { 
+    Slack {
         /// The slack handles "@zprobst" for the people who can approve with this group.
-        people: Vec<String> 
+        people: Vec<String>,
     },
 }
 
@@ -28,16 +34,16 @@ pub enum ApprovalStatus {
     NotNeeded,
 
     /// This state indicates that somebody approved the deployment and stores the time and by.
-    Approved { 
-        /// The handle of the person who approved. 
-        by: String 
+    Approved {
+        /// The handle of the person who approved.
+        by: String,
     },
 
     /// The state indicates  that somebody explicitly denied the application to continue.
     /// As a result, the application cannot be deployed.
     Rejected {
-         /// The handle of the person who approved.  
-        by: String 
+        /// The handle of the person who approved.  
+        by: String,
     },
 
     /// The approval status when first created. This may become Pending or Not Needed
@@ -129,13 +135,9 @@ impl Stage {
     /// app is not mutable, this does not add the stage to the app. However, the stage is
     /// does contain a reference to the account.
     pub fn from_pr_number(app: &Application, number: u32) -> Self {
-        // TODO: Figure out a better way than a panic for applications that do not have
-        // a default stage; either we make it an invariant or we need to allow the user
-        // to specify the account to use for prs and make sure we handle when they don't
-        // have a default and don't sepcify a target account.
-        let account = app
-            .default_account()
-            .expect("No default account on the app");
+        let account = app.default_account().expect(
+            "No default account on the app. We should not have onboarded or updated the config.",
+        );
         Self {
             name: format!("pr-{}", number),
             approval_group: None,
@@ -167,7 +169,7 @@ pub struct Application {
     pub triggers: Vec<Trigger>,
 
     /// The  different approval groups that are in the application
-    pub approval_groups: Vec<ApprovalGroup>
+    pub approval_groups: Vec<ApprovalGroup>,
 }
 
 impl Application {
@@ -215,4 +217,123 @@ pub struct Deployment<'trigger> {
 
     ///  The current state of the approval for this deployment.
     pub approval_status: ApprovalStatus,
+}
+
+/// An action is a task to perform given the logic for the application's configuration.
+/// When evaluating each web hook event, zero or more actions are yielded from the
+/// event hook. This encodes the what but not the how to perform these actions.
+#[derive(Debug)]
+pub enum Action {
+    /// The app update action occurs typically on merges to master. The action,
+    /// clones the code, and then runs the updates the saved state of the application.
+    AppUpdate {
+        /// The repo ssh path to clone down and update the job.
+        repo: String,
+        /// The current application state and the application to update.
+        app: Application,
+    },
+
+    /// The approval action is for getting approval for the next stage in the pipeline.
+    /// The approach for approval steps should be block all other steps if the approval
+    /// is rejected.  
+    Approval {
+        /// The approval group to use to ask approval with.
+        approval_group: ApprovalGroup,
+        /// The application that is getting approved.
+        app: Application,
+        /// The stage that is getting approved.
+        stage: Stage,
+        /// The sha to be deployed.
+        git_sha: String,
+    },
+
+    /// The build action is to kick off the build job for the code and to upload the
+    /// artifacts to the given location.
+    Build {
+        /// The ref to checkout.
+        git_ref: String,
+        /// The repo to store the code.
+        repo: String,
+        /// The artifact bucket to save the artifacts in.
+        artifact_bucket: String,
+        /// The path inside of the bucket to store the artifacts.
+        artifact_folder: String,
+    },
+
+    /// The deploy job should be responsible for deploying the code to an environemnt.
+    /// It should always follow a build in a pipeline.AsRef
+    Deploy {
+        /// The artifact bucket to get the artifacts from.
+        artifact_bucket: String,
+        /// The path inside of the bucket to store the artifacts.
+        artifact_folder: String,
+        /// The stage definition to load.
+        stage: Stage,
+    },
+
+    /// The undeploy job should be responsible for undeploying the stack from
+    /// the account for the stage.
+    Undeploy {
+        /// The state to ignore
+        stage: Stage,
+    },
+}
+
+//// WIP Code /////
+
+#[derive(Debug)]
+pub enum ActionResult {
+    Success,
+    Failed,
+    Canceled,
+}
+
+/// A pipeline is a series of actions that need to be performed in order.
+#[derive(Debug)]
+pub struct Pipeline {
+    pending_actions: Vec<Action>,
+    completed_actions: Vec<Action>,
+    action_results: Vec<ActionResult>,
+}
+
+impl Pipeline {
+    /// Generates a blank pipeline to build on.
+    pub fn empty() -> Self {
+        Self {
+            pending_actions: Vec::new(),
+            completed_actions: Vec::new(),
+            action_results: Vec::new(),
+        }
+    }
+
+    /// Adds a new action to the pipeline that can be performed.
+    pub fn add_action<'a>(&'a mut self, action: Action) -> &'a mut Self {
+        self.pending_actions.push(action);
+        self
+    }
+
+    /// Pops the next action off of the stack of actions to complete.
+    pub fn pop_next_action(&mut self) -> Option<Action> {
+        self.pending_actions.pop()
+    }
+
+    /// For an action in a pipeline tha was popped, this will consume that action
+    /// again and take result for that action.
+    pub fn complete_action(&mut self, action: Action, action_result: ActionResult) {
+        self.completed_actions.push(action);
+        self.action_results.push(action_result);
+    }
+
+    /// Marks all remaining steps in the pipeline as cancelled.
+    pub fn cancel(&mut self) {
+        while let Some(action) = self.pop_next_action() {
+            self.complete_action(action, ActionResult::Canceled);
+        }
+    }
+}
+
+impl Default for Pipeline {
+    fn default() -> Self {
+        Pipeline::empty()
+    }
 }

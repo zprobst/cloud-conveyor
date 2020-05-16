@@ -1,4 +1,4 @@
-use clap::{Arg, App, SubCommand};
+use clap::{App, Arg, SubCommand};
 use cloud_conveyor_core::yaml::{load_app_from_yaml, write_new_config_file};
 
 // TODO: We will want to setup the version to come from cargo.toml.
@@ -17,22 +17,26 @@ fn main() {
             SubCommand::with_name(check_command_name)
                 .about("Checks the conveyor.yaml configuration file for anything that's wrong.")
                 .version(version)
-                .author(author)
+                .author(author),
         )
         .subcommand(
             SubCommand::with_name("init")
                 .about("Creates a new .conveyor.yaml file for the current directory")
                 .version(version)
                 .author(author)
-                .arg(Arg::with_name("org")
-                    .help("Sets the input file to use")
-                    .required(true)
-                    .index(1))
-                .arg(Arg::with_name("app")
-                     .help("Sets the input file to use")
-                     .required(true)
-                     .index(2))
-                .alias("i")
+                .arg(
+                    Arg::with_name("org")
+                        .help("Sets the input file to use")
+                        .required(true)
+                        .index(1),
+                )
+                .arg(
+                    Arg::with_name("app")
+                        .help("Sets the input file to use")
+                        .required(true)
+                        .index(2),
+                )
+                .alias("i"),
         )
         .get_matches();
 
@@ -44,7 +48,7 @@ fn main() {
             Ok(app) => {
                 println!("{:#?}", app);
                 println!("Everything is good!")
-            },
+            }
             Err(_) => eprintln!("Everything is NOT OK!"),
         }
     }
