@@ -122,12 +122,12 @@ impl Into<Application> for ConfigFile {
 pub fn load_conf_from_yaml() -> Result<ConfigFile, std::io::Error> {
     let file = File::open(".conveyor.yaml")?;
     let yaml: ConfigFile = from_reader(file).expect("file is not valid yaml format");
-    return Ok(yaml);
+    Ok(yaml)
 }
 
 /// Loads a configuration as an application struct.
 pub fn load_app_from_yaml() -> Result<Application, std::io::Error> {
-    return load_conf_from_yaml().map(|conf| conf.into());
+    load_conf_from_yaml().map(|conf| conf.into())
 }
 
 /// Creates a new file and saves it in the current directory for the config.

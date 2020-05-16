@@ -13,7 +13,7 @@ pub mod yaml;
 
 /// Defines an group of approvers that use a single service.
 /// Currently, on the slack type is supported.
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 pub enum ApprovalGroup {
     /// The Slack approval pattern. When approval is needed, each of the people in the people
     /// vector should get a message that allows them to approve or deny a deployment.
@@ -24,7 +24,7 @@ pub enum ApprovalGroup {
 }
 
 /// Defines the current status of an approval for a certain application deployment.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 pub enum ApprovalStatus {
     /// The approval request has been set to all of the particpants but nobody has responded yet.
     Pending,
@@ -53,7 +53,7 @@ pub enum ApprovalStatus {
 
 /// An account with a cloud provider with a cloud provider and the types to bind information'
 /// for given the type of cloud provider.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Account {
     /// The name of the aws account in question.
     pub name: String,
@@ -78,7 +78,7 @@ impl Account {
 /// Defines the kinds of triggers in the application that allow for
 /// things to happen for user actions. For instance, pr deploys, merges to branches, etc
 /// given the information provided by a source control provider such as github.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Trigger {
     /// PR Builds an deploys. When they occur, new temporary stacks are created and updated
@@ -118,7 +118,7 @@ pub enum Trigger {
 }
 
 ///  The stage of the application. This is specific an environment.
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct Stage {
     /// The name of the stage. e.g "dev", "stage", "prod"
     pub name: String,
@@ -144,10 +144,15 @@ impl Stage {
             account: account.clone(),
         }
     }
+
+    /// Determines if a branch is for a PR or not.
+    pub fn is_for_pr(&self, pr_number: u32) -> bool {
+        self.name == format!("pr-{}", pr_number)
+    }
 }
 
 /// Defines the application that is using Cloud Conveyor.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 pub struct Application {
     /// The org that the application is a part of. This will likely be the owner
     /// of the project on a source control platform like github.
@@ -181,10 +186,20 @@ impl Application {
             )
         })
     }
+
+    /// Adds a new stage to the application.
+    pub fn add_stage(&mut self, stage: Stage) {
+        self.stages.push(stage)
+    }
+
+    /// Returns the full name of the application org/app-name
+    pub fn full_name(&self) -> String {
+        format!("{}/{}", self.org, self.app)
+    }
 }
 
 /// Creates a new Deployment for a specific application.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Deployment<'trigger> {
     ///  The application that is being deployed.
     pub app: Application,
@@ -222,7 +237,7 @@ pub struct Deployment<'trigger> {
 /// An action is a task to perform given the logic for the application's configuration.
 /// When evaluating each web hook event, zero or more actions are yielded from the
 /// event hook. This encodes the what but not the how to perform these actions.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Action {
     /// The app update action occurs typically on merges to master. The action,
     /// clones the code, and then runs the updates the saved state of the application.
@@ -239,19 +254,19 @@ pub enum Action {
     Approval {
         /// The approval group to use to ask approval with.
         approval_group: ApprovalGroup,
-        /// The application that is getting approved.
-        app: Application,
         /// The stage that is getting approved.
-        stage: Stage,
+        stage_name: String,
         /// The sha to be deployed.
-        git_sha: String,
+        sha: String,
+        /// app name that is being deployed.
+        app_name: String,
     },
 
     /// The build action is to kick off the build job for the code and to upload the
     /// artifacts to the given location.
     Build {
         /// The ref to checkout.
-        git_ref: String,
+        sha: String,
         /// The repo to store the code.
         repo: String,
         /// The artifact bucket to save the artifacts in.
@@ -282,9 +297,13 @@ pub enum Action {
 //// WIP Code /////
 
 #[derive(Debug)]
+/// The result of performing an action.
 pub enum ActionResult {
+    /// The success state shows that job succeeded.
     Success,
+    /// The failed state shows that job failed.
     Failed,
+    /// The canceled state shows that  the action was never performed.
     Canceled,
 }
 
@@ -307,8 +326,11 @@ impl Pipeline {
     }
 
     /// Adds a new action to the pipeline that can be performed.
-    pub fn add_action<'a>(&'a mut self, action: Action) -> &'a mut Self {
-        self.pending_actions.push(action);
+    pub fn add_action(mut self, action: Action) -> Self {
+        if !self.pending_actions.contains(&action) {
+            self.pending_actions.push(action);
+        }
+
         self
     }
 
@@ -334,6 +356,15 @@ impl Pipeline {
 
 impl Default for Pipeline {
     fn default() -> Self {
-        Pipeline::empty()
+        Self::empty()
     }
+}
+
+/// The artifact provider is something that adds buckets and
+/// folders to buckets to provide locations to store assets.
+pub trait ArtifactProvider {
+    /// The bucket for the application.
+    fn get_bucket(&self, app: &Application) -> String;
+    /// The folder for the application and current sha.
+    fn get_folder(&self, app: &Application, git_sha: &str) -> String;
 }
