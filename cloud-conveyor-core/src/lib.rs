@@ -1,53 +1,40 @@
-//! Defines core structures and interal abstractions for Cloud Conveyor.
+//! Defines core structures and internal abstractions for Cloud Conveyor.
 //! This is really an internal only crate for cloud conveyor and not meant as a standard library.
-#![warn(missing_docs)]
-use serde::{Serialize, Deserialize};
+#![warn(
+    missing_docs,
+    rust_2018_idioms,
+    missing_debug_implementations,
+    intra_doc_link_resolution_failure
+)]
+use serde::{Deserialize, Serialize};
 
+pub mod pipelining;
+pub mod runtime;
+pub mod webhook;
 pub mod yaml;
+
+// TODO: Application should be something that can be generic with things that have a "Persister<Application>" trait
+// that allows us to call "save" on the application when its state has been changed by the core library functions. All
+// refs to an application should be generic over the same thing then probably. Maybe there is a way to handle it a bit
+// better.
+
+// TODO: Make this docs way better.
 
 /// Defines an group of approvers that use a single service.
 /// Currently, on the slack type is supported.
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub enum ApprovalGroup {
     /// The Slack approval pattern. When approval is needed, each of the people in the people
     /// vector should get a message that allows them to approve or deny a deployment.
-    Slack { 
+    Slack {
         /// The slack handles "@zprobst" for the people who can approve with this group.
-        people: Vec<String> 
+        people: Vec<String>,
     },
-}
-
-/// Defines the current status of an approval for a certain application deployment.
-#[derive(Debug, Deserialize)]
-pub enum ApprovalStatus {
-    /// The approval request has been set to all of the particpants but nobody has responded yet.
-    Pending,
-
-    /// The state of the stage when evaluating the need for approval indicated that approval was not
-    /// requred. This is an "allowed status"
-    NotNeeded,
-
-    /// This state indicates that somebody approved the deployment and stores the time and by.
-    Approved { 
-        /// The handle of the person who approved. 
-        by: String 
-    },
-
-    /// The state indicates  that somebody explicitly denied the application to continue.
-    /// As a result, the application cannot be deployed.
-    Rejected {
-         /// The handle of the person who approved.  
-        by: String 
-    },
-
-    /// The approval status when first created. This may become Pending or Not Needed
-    /// depending on whether or not the stage defintion includes any required approvers.
-    Unasked,
 }
 
 /// An account with a cloud provider with a cloud provider and the types to bind information'
 /// for given the type of cloud provider.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Account {
     /// The name of the aws account in question.
     pub name: String,
@@ -58,7 +45,7 @@ pub struct Account {
 }
 
 impl Account {
-    /// Checked if the accout could potentially be a default account.
+    /// Checked if the account could potentially be a default account.
     pub fn is_candidate_for_default(&self) -> bool {
         self.is_named("default")
     }
@@ -72,7 +59,7 @@ impl Account {
 /// Defines the kinds of triggers in the application that allow for
 /// things to happen for user actions. For instance, pr deploys, merges to branches, etc
 /// given the information provided by a source control provider such as github.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Trigger {
     /// PR Builds an deploys. When they occur, new temporary stacks are created and updated
@@ -112,7 +99,7 @@ pub enum Trigger {
 }
 
 ///  The stage of the application. This is specific an environment.
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct Stage {
     /// The name of the stage. e.g "dev", "stage", "prod"
     pub name: String,
@@ -120,7 +107,7 @@ pub struct Stage {
     ///  A group of people to approve the stage. If any.
     pub approval_group: Option<ApprovalGroup>,
 
-    /// The reference to the accout that the stage belongs to.
+    /// The reference to the account that the stage belongs to.
     pub account: Account,
 }
 
@@ -129,23 +116,24 @@ impl Stage {
     /// app is not mutable, this does not add the stage to the app. However, the stage is
     /// does contain a reference to the account.
     pub fn from_pr_number(app: &Application, number: u32) -> Self {
-        // TODO: Figure out a better way than a panic for applications that do not have
-        // a default stage; either we make it an invariant or we need to allow the user
-        // to specify the account to use for prs and make sure we handle when they don't
-        // have a default and don't sepcify a target account.
         let account = app
             .default_account()
-            .expect("No default account on the app");
+            .expect("No default account on the app. This is somehow not a valid config.");
         Self {
             name: format!("pr-{}", number),
             approval_group: None,
             account: account.clone(),
         }
     }
+
+    /// Determines if a branch is for a PR or not.
+    pub fn is_for_pr(&self, pr_number: u32) -> bool {
+        self.name == format!("pr-{}", pr_number)
+    }
 }
 
 /// Defines the application that is using Cloud Conveyor.
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct Application {
     /// The org that the application is a part of. This will likely be the owner
     /// of the project on a source control platform like github.
@@ -157,17 +145,17 @@ pub struct Application {
     /// The list of accounts in the application
     pub accounts: Vec<Account>,
 
-    /// The internal index to the  account that is defualt.
+    /// The internal index to the  account that is default.
     pub(crate) default_account_index: Option<usize>,
 
-    /// The triggers of the applicaiton.
+    /// The triggers of the application.
     pub stages: Vec<Stage>,
 
-    /// The triggers of the applicaiton.
+    /// The triggers of the application.
     pub triggers: Vec<Trigger>,
 
     /// The  different approval groups that are in the application
-    pub approval_groups: Vec<ApprovalGroup>
+    pub approval_groups: Vec<ApprovalGroup>,
 }
 
 impl Application {
@@ -175,44 +163,18 @@ impl Application {
     pub fn default_account(&self) -> Option<&Account> {
         self.default_account_index.map(|i| {
             self.accounts.get(i).expect(
-                "interal index for default_account pointed to a value not in the list of accounts.",
+                "internal index for default_account pointed to a value not in the list of accounts.",
             )
         })
     }
-}
 
-/// Creates a new Deployment for a specific application.
-#[derive(Debug)]
-pub struct Deployment<'trigger> {
-    ///  The application that is being deployed.
-    pub app: Application,
+    /// Adds a new stage to the application.
+    pub fn add_stage(&mut self, stage: Stage) {
+        self.stages.push(stage)
+    }
 
-    /// The stage of the application that is being deployed,
-    pub stage: Stage,
-
-    /// The Code Sha that is being deployed.
-    pub sha: String,
-
-    /// A flag indicating the deployment is currently running.
-    pub is_running: bool,
-
-    /// A flag indicating the deployment was a success. If the deployment
-    /// is still running, this value will be false. That does not mean it is unsucessful.
-    pub was_success: bool,
-
-    /// The storage bucket where the assets for this deployment are currently at.
-    pub artifact_bucket: String,
-
-    /// The path in the above bucket that will be a folder containing all artifacts.
-    pub artifact_path: String,
-
-    /// The trigger that caused the deployment.
-    pub trigger: &'trigger Trigger,
-
-    /// The triggerer of the deployment. This is the person that caused the event to happen
-    ///  in source control.
-    pub caused_by: String,
-
-    ///  The current state of the approval for this deployment.
-    pub approval_status: ApprovalStatus,
+    /// Returns the full name of the application org/app-name
+    pub fn full_name(&self) -> String {
+        format!("{}/{}", self.org, self.app)
+    }
 }

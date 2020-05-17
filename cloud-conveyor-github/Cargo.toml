@@ -1,0 +1,8 @@
+[package]
+name = "cloud-conveyor-github"
+version = "0.1.0"
+authors = ["Zach Probst <zprobst@resilientvitality.com>"]
+edition = "2018"
+
+[dependencies]
+cloud-conveyor-core = { path = "../cloud-conveyor-core" }
