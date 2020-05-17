@@ -135,7 +135,7 @@ pub trait InterpretWebhooks {
     fn interpret_webhook_payload<'application>(
         &self,
         req: &WebhookRequest,
-        runtime: &'application RuntimeContext<'_, '_>,
+        runtime: &'application RuntimeContext,
     ) -> Vec<WebhookEvent<'application>> {
         let mut result = Vec::new();
 
@@ -439,13 +439,13 @@ fn event_to_pipeline(
 /// to compare those events against the application's triggers for anything that needs to be done.
 pub fn handle_web_hook_event<T: InterpretWebhooks>(
     interpreter: &T,
-    runtime: &mut RuntimeContext<'_, '_>,
+    runtime: &mut RuntimeContext,
     request: &WebhookRequest,
 ) -> Vec<Pipeline> {
     interpreter
         .interpret_webhook_payload(request, runtime)
         .iter_mut()
-        .map(|e| event_to_pipeline(e, runtime.artifact_provider))
+        .map(|e| event_to_pipeline(e, runtime.artifact_provider.as_ref()))
         .filter_map(|o| o)
         .collect()
 }

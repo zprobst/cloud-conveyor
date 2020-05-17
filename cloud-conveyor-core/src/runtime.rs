@@ -6,8 +6,10 @@
 //! can provide.
 //!
 
+use crate::deploy::DeployInfrastructure;
 use crate::Application;
 use std::fmt::Debug;
+use std::ops::{Deref, DerefMut};
 
 /// TODO
 pub trait ProvideArtifact: Debug {
@@ -22,27 +24,35 @@ pub trait Build: Debug {}
 
 /// TODO
 #[derive(Debug)]
-pub struct RuntimeContext<'artifact, 'builder> {
+pub struct RuntimeContext {
     /// TODO
-    pub artifact_provider: &'artifact mut dyn ProvideArtifact,
+    pub artifact_provider: Box<dyn ProvideArtifact>,
     /// TODO
-    pub builder: &'builder mut dyn Build,
+    pub builder: Box<dyn Build>,
+    /// TODO
+    pub infrastructure: Box<dyn DeployInfrastructure>,
 }
 
-impl<'artifact, 'builder> RuntimeContext<'artifact, 'builder> {
-    /// Builds a new runtime context that will be passed to different things in the runtime.
-    pub fn new(
-        artifact_provider: &'artifact mut dyn ProvideArtifact,
-        builder: &'builder mut dyn Build,
-    ) -> Self {
-        Self {
-            artifact_provider,
-            builder,
-        }
-    }
-
+impl RuntimeContext {
     /// TODO
     pub fn load_application_from_repo(&self, _: &str) -> Option<&mut Application> {
         unimplemented!();
+    }
+}
+
+// TODO: We can do this with all of the things and do it
+// with a macro...
+
+impl Deref for RuntimeContext {
+    type Target = Box<dyn DeployInfrastructure + 'static>;
+
+    fn deref<'a>(&'a self) -> &'a Self::Target {
+        &self.infrastructure
+    }
+}
+
+impl DerefMut for RuntimeContext {
+    fn deref_mut<'a>(&'a mut self) -> &'a mut Self::Target {
+        &mut self.infrastructure
     }
 }

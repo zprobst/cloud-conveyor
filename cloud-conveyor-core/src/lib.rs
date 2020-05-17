@@ -6,8 +6,15 @@
     missing_debug_implementations,
     intra_doc_link_resolution_failure
 )]
+
+#[macro_use]
+extern crate failure;
+
 use serde::{Deserialize, Serialize};
 
+pub mod build;
+pub mod chat;
+pub mod deploy;
 pub mod pipelining;
 pub mod runtime;
 pub mod webhook;

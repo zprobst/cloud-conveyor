@@ -7,6 +7,7 @@
 
 use crate::runtime::RuntimeContext;
 use crate::{ApprovalGroup, Stage};
+use failure::Error;
 use serde::{Deserialize, Serialize};
 use std::boxed::Box;
 use std::fmt::Debug;
@@ -20,6 +21,10 @@ pub enum ActionResult {
     /// The failed state shows that job failed and that the rest of the pipeline cannot continue
     /// and needs to be cancelled.
     Failed,
+    /// This is for actions that failed but do not prevent the pipeline from continuing. For instance,
+    /// if sending a "status" message to slack, and the action fails, it is not critical to the pipeline and can
+    /// continue.
+    FailedAllow,
     /// The canceled state shows that  the action was never performed because a previous action
     /// in the pipeline failed. This should NOT be used in most cases for the return
     /// from [get_result](trait.Perform.html#tymethod.get_result) in the [Perform](trait.Perform.html) trait.
@@ -41,20 +46,25 @@ pub enum ActionResult {
 /// function; the third and final method on the struct.
 pub trait Perform: Debug {
     /// Does the work required to start the job in some sort of external context.
-    fn start(&mut self, ctx: &RuntimeContext<'_, '_>) -> Result<(), ()>;
+    fn start(&mut self, ctx: &RuntimeContext) -> Result<(), Error>;
 
     /// Does the work required to see if the job, in the external context, is done (regardless of success or fail).
     /// If it is done, Ok(true) should be returned. If not Ok(false).
-    fn is_done(&mut self, ctx: &RuntimeContext<'_, '_>) -> Result<bool, ()>;
+    fn is_done(&mut self, ctx: &RuntimeContext) -> Result<bool, Error>;
 
     /// Gets the final state of the job and returns a [ActionResult](enum.ActionResult.html). For information regarding
     /// when to return what version of [ActionResult](enum.ActionResult.html), see the docs on [ActionResult](enum.ActionResult.html).
-    fn get_result(&self, ctx: &RuntimeContext<'_, '_>) -> ActionResult;
+    fn get_result(&self, ctx: &RuntimeContext) -> ActionResult;
 }
 
 // TODO: FIll out the spec for this type.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct AppUpdate(String);
+
+// TODO: FIll out the spec for this type.
+// TODO: Add notifications to before and after builds and before and after deploys to an env.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct Notify;
 
 /// The Approval action is responsible for managing the need to get approval from a human prior to
 /// continuing through the pipeline. It does so by implementing the [Perform](trait.Perform.html) trait.
@@ -87,13 +97,13 @@ pub struct Approval {
 }
 
 impl Perform for Approval {
-    fn start(&mut self, _: &RuntimeContext<'_, '_>) -> std::result::Result<(), ()> {
+    fn start(&mut self, _: &RuntimeContext) -> std::result::Result<(), Error> {
         todo!()
     }
-    fn is_done(&mut self, _: &RuntimeContext<'_, '_>) -> std::result::Result<bool, ()> {
+    fn is_done(&mut self, _: &RuntimeContext) -> std::result::Result<bool, Error> {
         todo!()
     }
-    fn get_result(&self, _: &RuntimeContext<'_, '_>) -> ActionResult {
+    fn get_result(&self, _: &RuntimeContext) -> ActionResult {
         todo!()
     }
 }
@@ -136,13 +146,13 @@ pub struct Build {
 }
 
 impl Perform for Build {
-    fn start(&mut self, _: &RuntimeContext<'_, '_>) -> std::result::Result<(), ()> {
+    fn start(&mut self, _: &RuntimeContext) -> std::result::Result<(), Error> {
         todo!()
     }
-    fn is_done(&mut self, _: &RuntimeContext<'_, '_>) -> std::result::Result<bool, ()> {
+    fn is_done(&mut self, _: &RuntimeContext) -> std::result::Result<bool, Error> {
         todo!()
     }
-    fn get_result(&self, _: &RuntimeContext<'_, '_>) -> ActionResult {
+    fn get_result(&self, _: &RuntimeContext) -> ActionResult {
         todo!()
     }
 }
@@ -181,13 +191,13 @@ pub struct Deploy {
 }
 
 impl Perform for Deploy {
-    fn start(&mut self, _: &RuntimeContext<'_, '_>) -> std::result::Result<(), ()> {
+    fn start(&mut self, _: &RuntimeContext) -> Result<(), Error> {
         todo!()
     }
-    fn is_done(&mut self, _: &RuntimeContext<'_, '_>) -> std::result::Result<bool, ()> {
+    fn is_done(&mut self, _: &RuntimeContext) -> Result<bool, Error> {
         todo!()
     }
-    fn get_result(&self, _: &RuntimeContext<'_, '_>) -> ActionResult {
+    fn get_result(&self, _: &RuntimeContext) -> ActionResult {
         todo!()
     }
 }
@@ -220,18 +230,18 @@ pub struct Undeploy {
 }
 
 impl Perform for Undeploy {
-    fn start(&mut self, _: &RuntimeContext<'_, '_>) -> std::result::Result<(), ()> {
+    fn start(&mut self, _: &RuntimeContext) -> std::result::Result<(), Error> {
         todo!()
     }
-    fn is_done(&mut self, _: &RuntimeContext<'_, '_>) -> std::result::Result<bool, ()> {
+    fn is_done(&mut self, _: &RuntimeContext) -> std::result::Result<bool, Error> {
         todo!()
     }
-    fn get_result(&self, _: &RuntimeContext<'_, '_>) -> ActionResult {
+    fn get_result(&self, _: &RuntimeContext) -> ActionResult {
         todo!()
     }
 }
 
-/// A pipeline is a series of actions that need to be performed in order. It is like a stack, responsible
+/// A pipeline is a series of actions that need to be performed in order. It is like a queue, responsible
 /// for popping and pushing actions that implement the [Perform](trait.Perform.html) trait.
 #[derive(Debug)]
 pub struct Pipeline {
@@ -254,6 +264,13 @@ impl Pipeline {
     /// Adds a new action to the pipeline that can be performed.
     pub fn add_action(mut self, action: Box<dyn Perform>) -> Self {
         self.pending_actions.push(action);
+        self
+    }
+
+    /// The action is needed to be immediately done. This means that the next thing that
+    /// is popped off will be the action to specified.
+    pub fn add_immediate_action(mut self, action: Box<dyn Perform>) -> Self {
+        self.pending_actions.insert(0, action);
         self
     }
 
