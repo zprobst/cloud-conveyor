@@ -9,6 +9,8 @@ use std::io::prelude::*;
 
 use crate::{Account, Application, ApprovalGroup, Stage, Trigger};
 
+// TODO: Make this docs way better.
+
 /// Defines the yaml file defintion for an approval type.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApprovalDefinition {
