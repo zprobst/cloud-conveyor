@@ -21,8 +21,8 @@
 // necessary evil. We have to have a lot of owned information in structures because many of the types in the
 // core library implement serialize and deserialize for downstream crates.
 
-use crate::pipelining::{Action, Pipeline};
-use crate::runtime::{ArtifactProvider, RuntimeContext};
+use crate::pipelining::{Approval, Build, Deploy, Pipeline, Undeploy};
+use crate::runtime::{ProvideArtifact, RuntimeContext};
 use crate::{Application, Stage, Trigger};
 use log::info;
 use regex::Regex;
@@ -102,10 +102,10 @@ pub struct WebhookEvent<'application> {
 /// we need this to be a trait that can be implemented for different providers in a separate crate.
 ///
 /// The approach to this is a forced compartmentalization of the responsibilities. You will define several functions.
-/// One that parses the event into an intermediary form of your choosing and three other methods that consume
+/// One that parses the event into an intermediary form of your choosing and two other methods that consume
 /// references to that intermediary type and provide information from that type to the internals of cloud conveyor
 /// that are needed in order to perform the operations required by the module level documentation [here](index.html).
-pub trait WebhookInterpreter {
+pub trait InterpretWebhooks {
     /// Intermediary type  that you parse the raw web hook events into.
     type Intermediary;
 
@@ -160,7 +160,7 @@ pub trait WebhookInterpreter {
 }
 
 fn add_build_and_deploy_stages(
-    artifact_provider: &dyn ArtifactProvider,
+    artifact_provider: &dyn ProvideArtifact,
     pipeline: Option<Pipeline>,
     sha: &str,
     deploy_stages: Vec<Stage>,
@@ -168,7 +168,7 @@ fn add_build_and_deploy_stages(
 ) -> Pipeline {
     let artifact_bucket = artifact_provider.get_bucket(&event.app);
     let artifact_folder = artifact_provider.get_folder(&event.app, sha);
-    let build_action = Action::Build {
+    let build_action = Build {
         repo: event.repo.clone(),
         sha: sha.to_string(),
         artifact_bucket: artifact_bucket.clone(),
@@ -178,12 +178,14 @@ fn add_build_and_deploy_stages(
         "Pushing build action for  for sha {:?} with action {:?} ",
         sha, build_action
     );
-    let mut new_pipeline = pipeline.unwrap_or_default().add_action(build_action);
+    let mut new_pipeline = pipeline
+        .unwrap_or_default()
+        .add_action(Box::new(build_action));
 
     // If the deployment should be done, we should do it. Add the step to the pipeline.
     for stage in deploy_stages {
         if let Some(approval_group) = stage.approval_group.as_ref() {
-            let approval_action = Action::Approval {
+            let approval_action = Approval {
                 approval_group: approval_group.clone(),
                 sha: sha.to_string(),
                 app_name: event.app.full_name(),
@@ -193,26 +195,27 @@ fn add_build_and_deploy_stages(
                 "Pushing approval required  for stage {:?} with action {:?} ",
                 stage, approval_action
             );
-            new_pipeline = new_pipeline.add_action(approval_action);
+            new_pipeline = new_pipeline.add_action(Box::new(approval_action));
         }
 
-        let deploy_action = Action::Deploy {
+        let deploy_action = Deploy {
             artifact_bucket: artifact_bucket.clone(),
             artifact_folder: artifact_folder.clone(),
             stage: stage.clone(),
+            repo: event.repo.clone(),
         };
         info!(
             "Pushing deploy  action for stage {:?} with action {:?}",
             stage, deploy_action
         );
-        new_pipeline = new_pipeline.add_action(deploy_action);
+        new_pipeline = new_pipeline.add_action(Box::new(deploy_action));
     }
 
     new_pipeline
 }
 
 fn handle_tag_trigger(
-    artifact_provider: &dyn ArtifactProvider,
+    artifact_provider: &dyn ProvideArtifact,
     pipeline: Option<Pipeline>,
     event: &mut WebhookEvent<'_>,
     pattern: String,
@@ -248,7 +251,7 @@ fn handle_tag_trigger(
 }
 
 fn handle_merge_trigger(
-    artifact_provider: &dyn ArtifactProvider,
+    artifact_provider: &dyn ProvideArtifact,
     pipeline: Option<Pipeline>,
     event: &mut WebhookEvent<'_>,
     to_regex: String,
@@ -309,7 +312,7 @@ fn handle_pr_trigger(
     pipeline: Option<Pipeline>,
     should_deploy: bool,
     event: &mut WebhookEvent<'_>,
-    artifact_provider: &dyn ArtifactProvider,
+    artifact_provider: &dyn ProvideArtifact,
 ) -> Option<Pipeline> {
     match event.event.clone() {
         // When a pull request is created we need to create a build job. So we will create or
@@ -350,12 +353,13 @@ fn handle_pr_trigger(
             // If there is a stage, we need to "undeploy" it from the appropriate
             // account.  We do not need to do any kind of final builds.
             if let Some(stage) = stage {
-                let undeploy_action = Action::Undeploy {
+                let undeploy_action = Undeploy {
                     stage: stage.clone(),
+                    repo: event.repo.clone(),
                 };
                 return pipeline
                     .unwrap_or_default()
-                    .add_action(undeploy_action)
+                    .add_action(Box::new(undeploy_action))
                     .into();
             }
             pipeline
@@ -392,7 +396,7 @@ fn handle_pr_trigger(
 
 fn event_to_pipeline(
     event: &mut WebhookEvent<'_>,
-    artifact_provider: &dyn ArtifactProvider,
+    artifact_provider: &dyn ProvideArtifact,
 ) -> Option<Pipeline> {
     let mut result = None;
 
@@ -433,7 +437,7 @@ fn event_to_pipeline(
 /// implementation of the [WebhookInterpreter](trait.WebhookInterpreter.html) trait. That trait object will
 /// process teh request for any [VcsEvent](enum.VcsEvent.html) that we care about. This will invoke operations
 /// to compare those events against the application's triggers for anything that needs to be done.
-pub fn handle_web_hook_event<T: WebhookInterpreter>(
+pub fn handle_web_hook_event<T: InterpretWebhooks>(
     interpreter: &T,
     runtime: &mut RuntimeContext<'_, '_>,
     request: &WebhookRequest,

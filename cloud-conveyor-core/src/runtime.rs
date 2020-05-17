@@ -7,23 +7,32 @@
 //!
 
 use crate::Application;
+use std::fmt::Debug;
 
-pub trait ArtifactProvider {
+/// TODO
+pub trait ProvideArtifact: Debug {
+    /// TODO
     fn get_bucket(&self, app: &Application) -> String;
+    /// TODO
     fn get_folder(&self, app: &Application, git_sha: &str) -> String;
 }
 
-pub trait Build {}
+/// TODO
+pub trait Build: Debug {}
 
+/// TODO
+#[derive(Debug)]
 pub struct RuntimeContext<'artifact, 'builder> {
-    pub artifact_provider: &'artifact mut dyn ArtifactProvider,
+    /// TODO
+    pub artifact_provider: &'artifact mut dyn ProvideArtifact,
+    /// TODO
     pub builder: &'builder mut dyn Build,
 }
 
 impl<'artifact, 'builder> RuntimeContext<'artifact, 'builder> {
     /// Builds a new runtime context that will be passed to different things in the runtime.
     pub fn new(
-        artifact_provider: &'artifact mut dyn ArtifactProvider,
+        artifact_provider: &'artifact mut dyn ProvideArtifact,
         builder: &'builder mut dyn Build,
     ) -> Self {
         Self {
@@ -32,6 +41,7 @@ impl<'artifact, 'builder> RuntimeContext<'artifact, 'builder> {
         }
     }
 
+    /// TODO
     pub fn load_application_from_repo(&self, _: &str) -> Option<&mut Application> {
         unimplemented!();
     }

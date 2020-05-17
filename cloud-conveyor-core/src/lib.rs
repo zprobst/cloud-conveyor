@@ -32,34 +32,6 @@ pub enum ApprovalGroup {
     },
 }
 
-/// Defines the current status of an approval for a certain application deployment.
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
-pub enum ApprovalStatus {
-    /// The approval request has been set to all of the participants but nobody has responded yet.
-    Pending,
-
-    /// The state of the stage when evaluating the need for approval indicated that approval was not
-    /// required. This is an "allowed status"
-    NotNeeded,
-
-    /// This state indicates that somebody approved the deployment and stores the time and by.
-    Approved {
-        /// The handle of the person who approved.
-        by: String,
-    },
-
-    /// The state indicates  that somebody explicitly denied the application to continue.
-    /// As a result, the application cannot be deployed.
-    Rejected {
-        /// The handle of the person who approved.  
-        by: String,
-    },
-
-    /// The approval status when first created. This may become Pending or Not Needed
-    /// depending on whether or not the stage definition includes any required approvers.
-    Unasked,
-}
-
 /// An account with a cloud provider with a cloud provider and the types to bind information'
 /// for given the type of cloud provider.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
