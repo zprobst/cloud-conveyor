@@ -11,7 +11,7 @@ use crate::{Account, Application, ApprovalGroup, Stage, Trigger};
 
 // TODO: Make this docs way better.
 
-/// Defines the yaml file defintion for an approval type.
+/// Defines the yaml file definition for an approval type.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApprovalDefinition {
     /// The type of approval that is supported. See ApprovalGroup for all
@@ -71,7 +71,7 @@ impl StageDefinition {
     }
 }
 
-/// The root configuration file object. This is a represnetation of
+/// The root configuration file object. This is a representation of
 /// what the user has stored at a given version of their ".conveyor.yaml"
 /// file.
 #[derive(Debug, Serialize, Deserialize)]

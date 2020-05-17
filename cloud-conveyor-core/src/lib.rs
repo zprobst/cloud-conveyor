@@ -22,7 +22,7 @@ pub mod yaml;
 
 /// Defines an group of approvers that use a single service.
 /// Currently, on the slack type is supported.
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub enum ApprovalGroup {
     /// The Slack approval pattern. When approval is needed, each of the people in the people
     /// vector should get a message that allows them to approve or deny a deployment.
@@ -33,7 +33,7 @@ pub enum ApprovalGroup {
 }
 
 /// Defines the current status of an approval for a certain application deployment.
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub enum ApprovalStatus {
     /// The approval request has been set to all of the participants but nobody has responded yet.
     Pending,
@@ -127,7 +127,7 @@ pub enum Trigger {
 }
 
 ///  The stage of the application. This is specific an environment.
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct Stage {
     /// The name of the stage. e.g "dev", "stage", "prod"
     pub name: String,
@@ -161,7 +161,7 @@ impl Stage {
 }
 
 /// Defines the application that is using Cloud Conveyor.
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct Application {
     /// The org that the application is a part of. This will likely be the owner
     /// of the project on a source control platform like github.
@@ -191,7 +191,7 @@ impl Application {
     pub fn default_account(&self) -> Option<&Account> {
         self.default_account_index.map(|i| {
             self.accounts.get(i).expect(
-                "interal index for default_account pointed to a value not in the list of accounts.",
+                "internal index for default_account pointed to a value not in the list of accounts.",
             )
         })
     }

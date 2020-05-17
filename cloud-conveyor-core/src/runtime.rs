@@ -13,4 +13,26 @@ pub trait ArtifactProvider {
     fn get_folder(&self, app: &Application, git_sha: &str) -> String;
 }
 
-pub trait Builder {}
+pub trait Build {}
+
+pub struct RuntimeContext<'artifact, 'builder> {
+    pub artifact_provider: &'artifact mut dyn ArtifactProvider,
+    pub builder: &'builder mut dyn Build,
+}
+
+impl<'artifact, 'builder> RuntimeContext<'artifact, 'builder> {
+    /// Builds a new runtime context that will be passed to different things in the runtime.
+    pub fn new(
+        artifact_provider: &'artifact mut dyn ArtifactProvider,
+        builder: &'builder mut dyn Build,
+    ) -> Self {
+        Self {
+            artifact_provider,
+            builder,
+        }
+    }
+
+    pub fn load_application_from_repo(&self, _: &str) -> Option<&mut Application> {
+        unimplemented!();
+    }
+}

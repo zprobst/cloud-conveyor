@@ -1,10 +1,24 @@
+//! Defines the high order types for saving regarding the state of a pipeline. While this
+//! code does not produce a pipeline (that exists in places like webhook), it does provide
+//! patterns for interacting with and operating on a pipeline.
+
 use crate::{Application, ApprovalGroup, Stage};
 use log::info;
+use serde::{Deserialize, Serialize};
+
+// TODO: This enum will be a trait and the versions will be a thing that implements
+// the trait. Each of them will be implementing a "do" method or something that
+// takes the state of the application and does something with the information.
+
+//pub trait NewAction {
+//    fn do(&self,  runtime: &RuntimeContext) -> impl Future;
+//
+//}
 
 // An action is a task to perform given the logic for the application's configuration.
 /// When evaluating each web hook event, zero or more actions are yielded from the
 /// event hook. This encodes the what but not the how to perform these actions.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub enum Action {
     /// The app update action occurs typically on merges to master. The action,
     /// clones the code, and then runs the updates the saved state of the application.
@@ -61,7 +75,7 @@ pub enum Action {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 /// The result of performing an action.
 pub enum ActionResult {
     /// The success state shows that job succeeded.
@@ -73,7 +87,7 @@ pub enum ActionResult {
 }
 
 /// A pipeline is a series of actions that need to be performed in order.
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Pipeline {
     pending_actions: Vec<Action>,
     completed_actions: Vec<Action>,

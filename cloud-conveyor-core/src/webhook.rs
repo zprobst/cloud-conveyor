@@ -17,8 +17,12 @@
 //! matches the name of the branch merged into (and optionally the same for the source branch) then
 //! we will want to build and deploy the code to the environment list  that exists in the aforementioned trigger.
 
+// DEV NOTE: There are many locations where we "just clone" stuff. This _seems_ like it has to be a
+// necessary evil. We have to have a lot of owned information in structures because many of the types in the
+// core library implement serialize and deserialize for downstream crates.
+
 use crate::pipelining::{Action, Pipeline};
-use crate::runtime::ArtifactProvider;
+use crate::runtime::{ArtifactProvider, RuntimeContext};
 use crate::{Application, Stage, Trigger};
 use log::info;
 use regex::Regex;
@@ -113,20 +117,12 @@ pub trait WebhookInterpreter {
     /// If your parsing has errors, this likely means that, assuming the implementation is
     /// correct,  the data is invalid and by definition does not supply any kind of information
     /// to be processed. As such, errors should be handled and remapped as an empty vec.
-    fn parse_to_intermediary_events(&self, req: &WebhookRequest) -> Vec<Self::Intermediary>;
+    fn parse_to_intermediary(&self, req: &WebhookRequest) -> Vec<Self::Intermediary>;
 
     /// This will take the intermediary type and return an option of a vcs event. If the event
     /// described by the intermediary object does not relate to any one of the [VcsEvent](enum.VcsEvent.html)
     /// types, then None can be returned. Items that return none are dropped from the pipeline.
-    fn get_vcs_type(&self, intermediary: &Self::Intermediary) -> Option<VcsEvent>;
-
-    /// This function will take the intermediary type and return and option to a mutable reference
-    /// of the application. If the event does not belong to any application that is persisted, the None
-    /// option can be used. When none is returned, the event is dropped.
-    fn get_corresponding_application<'application>(
-        &self,
-        intermediary: &Self::Intermediary,
-    ) -> Option<&'application mut Application>;
+    fn get_vcs_event(&self, intermediary: &Self::Intermediary) -> Option<VcsEvent>;
 
     /// Gets the repo of the event. This function, unlike the others in this trait cannot return an
     /// option because it does not make sense to have a repository event that does not have a
@@ -139,13 +135,14 @@ pub trait WebhookInterpreter {
     fn interpret_webhook_payload<'application>(
         &self,
         req: &WebhookRequest,
+        runtime: &'application RuntimeContext<'_, '_>,
     ) -> Vec<WebhookEvent<'application>> {
         let mut result = Vec::new();
 
-        for inter in self.parse_to_intermediary_events(req) {
+        for inter in self.parse_to_intermediary(req) {
             let repo = self.get_repo(&inter);
-            let maybe_app = self.get_corresponding_application(&inter);
-            let maybe_vcs_event = self.get_vcs_type(&inter);
+            let maybe_app = runtime.load_application_from_repo(repo);
+            let maybe_vcs_event = self.get_vcs_event(&inter);
 
             if let Some(app) = maybe_app {
                 if let Some(event) = maybe_vcs_event {
@@ -162,8 +159,8 @@ pub trait WebhookInterpreter {
     }
 }
 
-fn add_build_and_deploy_stages<A: ArtifactProvider>(
-    artifact_provider: &A,
+fn add_build_and_deploy_stages(
+    artifact_provider: &dyn ArtifactProvider,
     pipeline: Option<Pipeline>,
     sha: &str,
     deploy_stages: Vec<Stage>,
@@ -214,8 +211,8 @@ fn add_build_and_deploy_stages<A: ArtifactProvider>(
     new_pipeline
 }
 
-fn handle_tag_trigger<A: ArtifactProvider>(
-    artifact_provider: &A,
+fn handle_tag_trigger(
+    artifact_provider: &dyn ArtifactProvider,
     pipeline: Option<Pipeline>,
     event: &mut WebhookEvent<'_>,
     pattern: String,
@@ -250,8 +247,8 @@ fn handle_tag_trigger<A: ArtifactProvider>(
     }
 }
 
-fn handle_merge_trigger<A: ArtifactProvider>(
-    artifact_provider: &A,
+fn handle_merge_trigger(
+    artifact_provider: &dyn ArtifactProvider,
     pipeline: Option<Pipeline>,
     event: &mut WebhookEvent<'_>,
     to_regex: String,
@@ -308,11 +305,11 @@ fn handle_merge_trigger<A: ArtifactProvider>(
     }
 }
 
-fn handle_pr_trigger<A: ArtifactProvider>(
+fn handle_pr_trigger(
     pipeline: Option<Pipeline>,
     should_deploy: bool,
     event: &mut WebhookEvent<'_>,
-    artifact_provider: &A,
+    artifact_provider: &dyn ArtifactProvider,
 ) -> Option<Pipeline> {
     match event.event.clone() {
         // When a pull request is created we need to create a build job. So we will create or
@@ -393,9 +390,9 @@ fn handle_pr_trigger<A: ArtifactProvider>(
     }
 }
 
-fn event_to_pipeline<A: ArtifactProvider>(
+fn event_to_pipeline(
     event: &mut WebhookEvent<'_>,
-    artifact_provider: &A,
+    artifact_provider: &dyn ArtifactProvider,
 ) -> Option<Pipeline> {
     let mut result = None;
 
@@ -436,15 +433,15 @@ fn event_to_pipeline<A: ArtifactProvider>(
 /// implementation of the [WebhookInterpreter](trait.WebhookInterpreter.html) trait. That trait object will
 /// process teh request for any [VcsEvent](enum.VcsEvent.html) that we care about. This will invoke operations
 /// to compare those events against the application's triggers for anything that needs to be done.
-pub fn handle_web_hook_event<T: WebhookInterpreter, A: ArtifactProvider>(
+pub fn handle_web_hook_event<T: WebhookInterpreter>(
     interpreter: &T,
-    artifact_provider: &A,
+    runtime: &mut RuntimeContext<'_, '_>,
     request: &WebhookRequest,
 ) -> Vec<Pipeline> {
     interpreter
-        .interpret_webhook_payload(request)
+        .interpret_webhook_payload(request, runtime)
         .iter_mut()
-        .map(|e| event_to_pipeline(e, artifact_provider))
+        .map(|e| event_to_pipeline(e, runtime.artifact_provider))
         .filter_map(|o| o)
         .collect()
 }
