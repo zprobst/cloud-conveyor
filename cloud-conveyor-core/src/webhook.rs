@@ -21,8 +21,9 @@
 // necessary evil. We have to have a lot of owned information in structures because many of the types in the
 // core library implement serialize and deserialize for downstream crates.
 
+use crate::build::ProvideArtifact;
 use crate::pipelining::{Approval, Build, Deploy, Pipeline, Undeploy};
-use crate::runtime::{ProvideArtifact, RuntimeContext};
+use crate::runtime::RuntimeContext;
 use crate::{Application, Stage, Trigger};
 use log::info;
 use regex::Regex;
@@ -166,8 +167,9 @@ fn add_build_and_deploy_stages(
     deploy_stages: Vec<Stage>,
     event: &mut WebhookEvent<'_>,
 ) -> Pipeline {
-    let artifact_bucket = artifact_provider.get_bucket(&event.app);
-    let artifact_folder = artifact_provider.get_folder(&event.app, sha);
+    // TODO: Unwrap here is not good - prop errors for this module.
+    let artifact_bucket = artifact_provider.get_bucket(&event.app).unwrap();
+    let artifact_folder = artifact_provider.get_folder(&event.app, sha).unwrap();
     let build_action = Build {
         repo: event.repo.clone(),
         sha: sha.to_string(),
@@ -184,7 +186,7 @@ fn add_build_and_deploy_stages(
 
     // If the deployment should be done, we should do it. Add the step to the pipeline.
     for stage in deploy_stages {
-        if let Some(approval_group) = stage.approval_group.as_ref() {
+        if let Some(approval_group) = &stage.approval_group {
             let approval_action = Approval {
                 approval_group: approval_group.clone(),
                 sha: sha.to_string(),
@@ -198,12 +200,12 @@ fn add_build_and_deploy_stages(
             new_pipeline = new_pipeline.add_action(Box::new(approval_action));
         }
 
-        let deploy_action = Deploy {
-            artifact_bucket: artifact_bucket.clone(),
-            artifact_folder: artifact_folder.clone(),
-            stage: stage.clone(),
-            repo: event.repo.clone(),
-        };
+        let deploy_action = Deploy::new(
+            artifact_bucket.clone(),
+            artifact_folder.clone(),
+            stage.clone(),
+            event.repo.clone(),
+        );
         info!(
             "Pushing deploy  action for stage {:?} with action {:?}",
             stage, deploy_action
@@ -226,11 +228,11 @@ fn handle_tag_trigger(
             let pattern = if pattern == "semver" {
                 SEMVER_REGEX
             } else {
-                pattern.as_ref()
+                &pattern
             };
 
             let re = Regex::new(pattern).unwrap();
-            if !re.is_match(tag.as_ref()) {
+            if !re.is_match(&tag) {
                 info!("Tag {:?} does not follow the pattern  {:?}", tag, pattern);
                 return pipeline;
             }
@@ -267,8 +269,8 @@ fn handle_merge_trigger(
             // If the merge is to a branch that matches the to_regex, we are good.
             // If not, we can abandon the version. We are going to consider it an
             // invariant that all regular expressions will compile. So this unwrap should be okay.
-            let regex = Regex::new(to_regex.as_ref()).unwrap();
-            if !regex.is_match(to_branch.as_ref()) {
+            let regex = Regex::new(&to_regex).unwrap();
+            if !regex.is_match(&to_branch) {
                 info!(
                     "Branch {:?} does not match pattern {:?}",
                     to_branch, to_regex
@@ -278,9 +280,8 @@ fn handle_merge_trigger(
 
             // If the trigger has a match regex use that or match to anything.
             // If the match is not a success, keep the current pipeline.
-            let regex =
-                Regex::new(from_regex.unwrap_or_else(|| String::from(".*")).as_ref()).unwrap();
-            if !regex.is_match(from_branch.as_ref()) {
+            let regex = Regex::new(&from_regex.unwrap_or_else(|| String::from(".*"))).unwrap();
+            if !regex.is_match(&from_branch) {
                 info!(
                     "Branch {:?} does not match pattern {:?}",
                     from_branch, regex
@@ -317,11 +318,7 @@ fn handle_pr_trigger(
     match event.event.clone() {
         // When a pull request is created we need to create a build job. So we will create or
         // populate the pipeline with a build step.
-        VcsEvent::PullRequestCreate {
-            source_branch: _,
-            pr_number,
-            sha,
-        } => {
+        VcsEvent::PullRequestCreate { pr_number, sha, .. } => {
             info!(
                 "Creating PR {:?} with deploy {:?}",
                 pr_number, should_deploy
@@ -341,10 +338,7 @@ fn handle_pr_trigger(
         }
         // If the pull request is complete and there is a defined stage, then
         // we should add an undeploy job to the pipeline.
-        VcsEvent::PullRequestComplete {
-            pr_number,
-            merged: _,
-        } => {
+        VcsEvent::PullRequestComplete { pr_number, .. } => {
             info!("Completing PR {:?}", pr_number);
 
             // Scan for the stage in the application for the PR.
@@ -366,11 +360,7 @@ fn handle_pr_trigger(
         }
         // If the pull request is updated and there is a defined stage, then
         // we should add an new build / deploy  job to the pipeline.
-        VcsEvent::PullRequestUpdate {
-            source_branch: _,
-            pr_number,
-            sha,
-        } => {
+        VcsEvent::PullRequestUpdate { pr_number, sha, .. } => {
             // Scan for the stage in the application for the PR.
             info!("Updating PR {:?}", pr_number);
             let stage = event.app.stages.iter().find(|s| s.is_for_pr(pr_number));

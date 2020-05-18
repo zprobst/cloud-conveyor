@@ -5,6 +5,7 @@
 // TODO: We are probably going to need to serialize the pipeline.
 // Probably this is the solution: https://stackoverflow.com/questions/50021897
 
+use crate::deploy::DeployStatus;
 use crate::runtime::RuntimeContext;
 use crate::{ApprovalGroup, Stage};
 use failure::Error;
@@ -58,18 +59,18 @@ pub trait Perform: Debug {
 }
 
 // TODO: FIll out the spec for this type.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct AppUpdate(String);
 
 // TODO: FIll out the spec for this type.
 // TODO: Add notifications to before and after builds and before and after deploys to an env.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct Notify;
 
 /// The Approval action is responsible for managing the need to get approval from a human prior to
 /// continuing through the pipeline. It does so by implementing the [Perform](trait.Perform.html) trait.
 ///
-/// For example,  this is used is many of the [Triggers](enum.Trigger.html) use the Approval action. Merges
+/// For example, this is used is many of the [Triggers](../../enum.Trigger.html) use the Approval action. Merges
 /// to a branch and pushes of a tag invoke deployments to [Stages](../struct.Stage.html) that may more many
 /// require approval by specifying an [ApprovalGroup](../struct.ApprovalGroup.html) and thus the creation of an
 /// approval action would only occur if that group is set.
@@ -84,7 +85,7 @@ struct Notify;
 /// ```
 ///  See the implementation for the [webhook](../webhook/index.html) module for
 /// more information on its consumption.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Approval {
     /// The approval group to use to ask approval with.
     pub approval_group: ApprovalGroup,
@@ -129,7 +130,7 @@ impl Perform for Approval {
 /// ```
 ///  See the implementation for the [webhook](../webhook/index.html) module for
 /// more information on its consumption.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Build {
     /// The ref to checkout.
     pub sha: String,
@@ -168,16 +169,16 @@ impl Perform for Build {
 /// the infrastructure controller managed by the [runtime](../runtime/index.html) via the [RuntimeContext](../runtime/struct.RuntimeContext.html).
 ///
 ///  ```rust
-///  let deploy = Deploy {
-///      stage:  /* Some stage */,
-///      repo:  "git@github.com:resilient-vitality/cloud-conveyor.git".to_string(),
-///      artifact_bucket: "my_bucket".to_string(),
-///      artifact_folder: "org/app/my-code-sha/".to_string()
-///  };
+///  let deploy = Deploy::new (
+///     "my_bucket".to_string(),
+///     "org/app/my-code-sha/".to_string(),
+///     /* Some stage */,
+///     "git@github.com:resilient-vitality/cloud-conveyor.git".to_string()
+///  );
 /// ```
 ///  See the implementation for the [webhook](../webhook/index.html) module for
 /// more information on its consumption.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Deploy {
     /// The artifact bucket to get the artifacts from.
     pub artifact_bucket: String,
@@ -188,17 +189,54 @@ pub struct Deploy {
     /// The repo of the application in question. The repo is used to capture what application the stage
     /// belongs to with storing the application or a reference to it.
     pub repo: String,
+    result: Option<DeployStatus>,
+}
+
+impl Deploy {
+    /// Creates a new deployment job.
+    ///
+    ///  ```rust
+    ///  let deploy = Deploy::new (
+    ///     "my_bucket".to_string(),
+    ///     "org/app/my-code-sha/".to_string(),
+    ///     /* Some stage */,
+    ///     "git@github.com:resilient-vitality/cloud-conveyor.git".to_string()
+    ///  );
+    /// ```
+    pub fn new(
+        artifact_bucket: String,
+        artifact_folder: String,
+        stage: Stage,
+        repo: String,
+    ) -> Self {
+        Self {
+            artifact_bucket,
+            artifact_folder,
+            stage,
+            repo,
+            result: None,
+        }
+    }
 }
 
 impl Perform for Deploy {
-    fn start(&mut self, _: &RuntimeContext) -> Result<(), Error> {
-        todo!()
+    fn start(&mut self, ctx: &RuntimeContext) -> Result<(), Error> {
+        ctx.start_deployment(&*self, ctx).map_err(|e| e.into())
     }
-    fn is_done(&mut self, _: &RuntimeContext) -> Result<bool, Error> {
-        todo!()
+    fn is_done(&mut self, ctx: &RuntimeContext) -> Result<bool, Error> {
+        match ctx.check_deployment(&*self, ctx) {
+            Ok(status) => match status {
+                DeployStatus::Pending => Ok(false),
+                _ => Ok(true),
+            },
+            Err(reason) => Err(reason.into()),
+        }
     }
     fn get_result(&self, _: &RuntimeContext) -> ActionResult {
-        todo!()
+        match self.result.as_ref().unwrap() {
+            DeployStatus::Complete => ActionResult::Success,
+            _ => ActionResult::Failed,
+        }
     }
 }
 

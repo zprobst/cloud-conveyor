@@ -1,8 +1,8 @@
 //! Defines the runtime abstraction for deploying infrastructure and reporting successes and failures when doing so.
 use crate::pipelining::Deploy;
+use crate::runtime::RuntimeContext;
+use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
-
-// TODO: Give DeployInfrastructure a type that has more info than Deploy has.
 
 /// Defines an error that occurrent when attempting to perform an operation on the
 ///  [DeployInfrastructure](trait.DeployInfrastructure.html) trait. This is meant to convey
@@ -30,7 +30,7 @@ pub enum DeployPollError {
 /// the state. For instance, if an api call fails when trying to check the state, `Failed` should
 /// not be returned. Instead the Result should be Err and the appropriate error information
 /// should be provided by [DeployPollError](enum.DeployPollError.html).]
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub enum DeployStatus {
     /// Indicates that the stack update was a complete and the result was a success.
     Complete,
@@ -60,7 +60,11 @@ pub trait DeployInfrastructure: Debug {
     /// and if not create the stack if required by the cloud provider. If the stack is there, you should update it.
     ///
     /// If an error occurs when triggering the deployment, use the appropriate variant of  [DeployPollError](enum.DeployPollError.html)
-    fn start_deployment(&self, deploy: &Deploy) -> Result<(), DeployPollError>;
+    fn start_deployment(
+        &self,
+        deploy: &Deploy,
+        ctx: &RuntimeContext,
+    ) -> Result<(), DeployPollError>;
 
     /// Polls the state of the deployment of the infrastructure given the deployment data passed.
     /// If that final result of the deployment is not known use [DeployStatus::Pending](enum.DeployStatus.html#variant.Pending).
@@ -70,5 +74,9 @@ pub trait DeployInfrastructure: Debug {
     /// does not allow the continuation of the pipeline, then return [DeployStatus::Failed](enum.DeployStatus.html#variant.Failed)
     ///
     /// If an error occurs when polling the state of the deployment, use the appropriate variant of  [DeployPollError](enum.DeployPollError.html)
-    fn check_deployment(&self, deploy: &Deploy) -> Result<DeployStatus, DeployPollError>;
+    fn check_deployment(
+        &self,
+        deploy: &Deploy,
+        ctx: &RuntimeContext,
+    ) -> Result<DeployStatus, DeployPollError>;
 }
