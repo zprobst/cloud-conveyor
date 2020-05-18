@@ -5,7 +5,7 @@
 //! and the like are defined here and provide the standard interface bindings that all of the runtime implementations
 //! can provide.
 
-use crate::build::{BuildSource, ProvideArtifact};
+use crate::build::{BuildSource, ProvideArtifactLocation};
 use crate::deploy::DeployInfrastructure;
 use crate::Application;
 use std::fmt::Debug;
@@ -15,7 +15,7 @@ use std::ops::{Deref, DerefMut};
 #[derive(Debug)]
 pub struct RuntimeContext {
     /// TODO
-    pub artifact_provider: Box<dyn ProvideArtifact>,
+    pub artifact_provider: Box<dyn ProvideArtifactLocation>,
     /// TODO
     pub builder: Box<dyn BuildSource>,
     /// TODO

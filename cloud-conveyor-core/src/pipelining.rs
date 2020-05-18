@@ -10,7 +10,6 @@ use crate::runtime::RuntimeContext;
 use crate::{ApprovalGroup, Stage};
 use failure::Error;
 use serde::{Deserialize, Serialize};
-use std::boxed::Box;
 use std::fmt::Debug;
 
 /// The result of performing an action via the [Perform](trait.Perform.html) trait.
@@ -56,6 +55,12 @@ pub trait Perform: Debug {
     /// Gets the final state of the job and returns a [ActionResult](enum.ActionResult.html). For information regarding
     /// when to return what version of [ActionResult](enum.ActionResult.html), see the docs on [ActionResult](enum.ActionResult.html).
     fn get_result(&self, ctx: &RuntimeContext) -> ActionResult;
+
+    /// Provides additional jobs that should be done as a result of this action before the pipeline continues. Whatever
+    /// actions you provide in overriding this method, will be executed immediately after this job.
+    fn get_new_work(&self, _ctx: &RuntimeContext) -> Option<Vec<Box<dyn Perform>>> {
+        None
+    }
 }
 
 // TODO: FIll out the spec for this type.
@@ -82,6 +87,9 @@ struct Notify;
 ///      sha: "cda888fd29a23fdb2d905e4ab6cf50230ce4c37b".to_string(),
 ///      app_name: "cloud_conveyor".to_string()
 ///  };
+///
+/// let pipeline = Pipeline::empty();
+/// pipeline.add_action(Box::new(approve));
 /// ```
 ///  See the implementation for the [webhook](../webhook/index.html) module for
 /// more information on its consumption.
@@ -118,15 +126,17 @@ impl Perform for Approval {
 ///
 /// Broadly speaking, the build type is an action that will invoke the building of the
 /// application's source using the [runtime](../runtime/index.html) configuration via
-/// the [RuntimeContext](../runtime/struct.RuntimeContext.html).
+/// the [RuntimeContext](../runtime/struct.RuntimeContext.html) by passing itself down to
+/// it context's implementation of [BuildSource](../build.trait.BuildSource.html).
 ///
 ///  ```rust
-///  let deploy = Build {
+///  let build = Build {
 ///      sha:  "cda888fd29a23fdb2d905e4ab6cf50230ce4c37b".to_string()
 ///      repo:  "git@github.com:resilient-vitality/cloud-conveyor.git".to_string(),
-///      artifact_bucket: "my_bucket".to_string(),
-///      artifact_folder: "org/app/my-code-sha/".to_string()
 ///  };
+///
+/// let pipeline = Pipeline::empty();
+/// pipeline.add_action(Box::new(build));
 /// ```
 ///  See the implementation for the [webhook](../webhook/index.html) module for
 /// more information on its consumption.
@@ -136,14 +146,6 @@ pub struct Build {
     pub sha: String,
     /// The repo to check the code out from.
     pub repo: String,
-    /// The storage bucket to save the artifacts in. This value is semantically
-    /// a string but the value is only relevant to the [ProvideArtifact](../runtime/trait.ProvideArtifact.html)
-    /// implementation stored in the [RuntimeContext](../runtime/struct.RuntimeContext.html).
-    pub artifact_bucket: String,
-    /// The artifact path inside of the storage bucket to save the artifacts in. This value is semantically
-    /// a string but the value is only  relevant to the [ProvideArtifact](../runtime/trait.ProvideArtifact.html)
-    /// implementation stored in the [RuntimeContext](../runtime/struct.RuntimeContext.html).
-    pub artifact_folder: String,
 }
 
 impl Perform for Build {
@@ -166,29 +168,31 @@ impl Perform for Build {
 /// The pattern for which that occurs is dependant on the inner type of the trigger.
 ///
 /// Broadly speaking, the deploy type is an action will invoke the creating or updating of a stack using
-/// the infrastructure controller managed by the [runtime](../runtime/index.html) via the [RuntimeContext](../runtime/struct.RuntimeContext.html).
+/// the infrastructure controller managed by the [runtime](../runtime/index.html) via the [RuntimeContext](../runtime/struct.RuntimeContext.html)
+///  by passing itself down to  it context's implementation of [DeployInfrastructure](../build.trait.DeployInfrastructure.html).
 ///
 ///  ```rust
 ///  let deploy = Deploy::new (
-///     "my_bucket".to_string(),
-///     "org/app/my-code-sha/".to_string(),
 ///     /* Some stage */,
-///     "git@github.com:resilient-vitality/cloud-conveyor.git".to_string()
+///     "git@github.com:resilient-vitality/cloud-conveyor.git".to_string(),
+///      "cda888fd29a23fdb2d905e4ab6cf50230ce4c37b".to_string()
 ///  );
+///
+/// let pipeline = Pipeline::empty();
+/// pipeline.add_action(Box::new(deploy));
 /// ```
 ///  See the implementation for the [webhook](../webhook/index.html) module for
 /// more information on its consumption.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Deploy {
-    /// The artifact bucket to get the artifacts from.
-    pub artifact_bucket: String,
-    /// The path inside of the bucket to store the artifacts.
-    pub artifact_folder: String,
     /// The stage definition to load.
     pub stage: Stage,
     /// The repo of the application in question. The repo is used to capture what application the stage
     /// belongs to with storing the application or a reference to it.
     pub repo: String,
+    /// The sha of the code to deploy.
+    pub sha: String,
+    /// The completed status of the deployment.
     result: Option<DeployStatus>,
 }
 
@@ -197,21 +201,15 @@ impl Deploy {
     ///
     ///  ```rust
     ///  let deploy = Deploy::new (
-    ///     "my_bucket".to_string(),
-    ///     "org/app/my-code-sha/".to_string(),
     ///     /* Some stage */,
-    ///     "git@github.com:resilient-vitality/cloud-conveyor.git".to_string()
+    ///     "git@github.com:resilient-vitality/cloud-conveyor.git".to_string(),
+    ///      "cda888fd29a23fdb2d905e4ab6cf50230ce4c37b".to_string()
     ///  );
+    ///
     /// ```
-    pub fn new(
-        artifact_bucket: String,
-        artifact_folder: String,
-        stage: Stage,
-        repo: String,
-    ) -> Self {
+    pub fn new(stage: Stage, repo: String, sha: String) -> Self {
         Self {
-            artifact_bucket,
-            artifact_folder,
+            sha,
             stage,
             repo,
             result: None,
@@ -254,6 +252,9 @@ impl Perform for Deploy {
 ///      stage:  /* Some stage */,
 ///      repo:  "git@github.com:resilient-vitality/cloud-conveyor.git".to_string()
 ///  };
+///
+/// let pipeline = Pipeline::empty();
+/// pipeline.add_action(Box::new(undeploy));
 /// ```
 ///  See the implementation for the [webhook](../webhook/index.html) module for
 /// more information on its consumption.

@@ -21,7 +21,6 @@
 // necessary evil. We have to have a lot of owned information in structures because many of the types in the
 // core library implement serialize and deserialize for downstream crates.
 
-use crate::build::ProvideArtifact;
 use crate::pipelining::{Approval, Build, Deploy, Pipeline, Undeploy};
 use crate::runtime::RuntimeContext;
 use crate::{Application, Stage, Trigger};
@@ -161,20 +160,14 @@ pub trait InterpretWebhooks {
 }
 
 fn add_build_and_deploy_stages(
-    artifact_provider: &dyn ProvideArtifact,
     pipeline: Option<Pipeline>,
     sha: &str,
     deploy_stages: Vec<Stage>,
     event: &mut WebhookEvent<'_>,
 ) -> Pipeline {
-    // TODO: Unwrap here is not good - prop errors for this module.
-    let artifact_bucket = artifact_provider.get_bucket(&event.app).unwrap();
-    let artifact_folder = artifact_provider.get_folder(&event.app, sha).unwrap();
     let build_action = Build {
         repo: event.repo.clone(),
         sha: sha.to_string(),
-        artifact_bucket: artifact_bucket.clone(),
-        artifact_folder: artifact_folder.clone(),
     };
     info!(
         "Pushing build action for  for sha {:?} with action {:?} ",
@@ -200,12 +193,7 @@ fn add_build_and_deploy_stages(
             new_pipeline = new_pipeline.add_action(Box::new(approval_action));
         }
 
-        let deploy_action = Deploy::new(
-            artifact_bucket.clone(),
-            artifact_folder.clone(),
-            stage.clone(),
-            event.repo.clone(),
-        );
+        let deploy_action = Deploy::new(stage.clone(), event.repo.clone(), sha.to_string());
         info!(
             "Pushing deploy  action for stage {:?} with action {:?}",
             stage, deploy_action
@@ -217,7 +205,6 @@ fn add_build_and_deploy_stages(
 }
 
 fn handle_tag_trigger(
-    artifact_provider: &dyn ProvideArtifact,
     pipeline: Option<Pipeline>,
     event: &mut WebhookEvent<'_>,
     pattern: String,
@@ -245,15 +232,13 @@ fn handle_tag_trigger(
                 .cloned()
                 .collect();
 
-            add_build_and_deploy_stages(artifact_provider, pipeline, &sha, deploy_stages, event)
-                .into()
+            add_build_and_deploy_stages(pipeline, &sha, deploy_stages, event).into()
         }
         _ => pipeline,
     }
 }
 
 fn handle_merge_trigger(
-    artifact_provider: &dyn ProvideArtifact,
     pipeline: Option<Pipeline>,
     event: &mut WebhookEvent<'_>,
     to_regex: String,
@@ -302,8 +287,7 @@ fn handle_merge_trigger(
             // a deploy job. The deploy jobs need be in the same order
             // as the vec for the stage names. That is the pattern for pipelining
             // envs.
-            add_build_and_deploy_stages(artifact_provider, pipeline, &sha, deploy_stages, event)
-                .into()
+            add_build_and_deploy_stages(pipeline, &sha, deploy_stages, event).into()
         }
         _ => pipeline,
     }
@@ -313,7 +297,6 @@ fn handle_pr_trigger(
     pipeline: Option<Pipeline>,
     should_deploy: bool,
     event: &mut WebhookEvent<'_>,
-    artifact_provider: &dyn ProvideArtifact,
 ) -> Option<Pipeline> {
     match event.event.clone() {
         // When a pull request is created we need to create a build job. So we will create or
@@ -332,8 +315,7 @@ fn handle_pr_trigger(
             } else {
                 Vec::new()
             };
-            let result =
-                add_build_and_deploy_stages(artifact_provider, pipeline, &sha, stages, event);
+            let result = add_build_and_deploy_stages(pipeline, &sha, stages, event);
             result.into()
         }
         // If the pull request is complete and there is a defined stage, then
@@ -369,7 +351,6 @@ fn handle_pr_trigger(
             // Of there is a stage for the pr, then we can copy that and use that
             // to deploy.
             add_build_and_deploy_stages(
-                artifact_provider,
                 pipeline,
                 &sha,
                 match stage {
@@ -384,10 +365,7 @@ fn handle_pr_trigger(
     }
 }
 
-fn event_to_pipeline(
-    event: &mut WebhookEvent<'_>,
-    artifact_provider: &dyn ProvideArtifact,
-) -> Option<Pipeline> {
+fn event_to_pipeline(event: &mut WebhookEvent<'_>) -> Option<Pipeline> {
     let mut result = None;
 
     for trigger in event.app.triggers.clone() {
@@ -398,7 +376,7 @@ fn event_to_pipeline(
                     deploy,
                     event.app.full_name()
                 );
-                result = handle_pr_trigger(result, deploy, event, artifact_provider);
+                result = handle_pr_trigger(result, deploy, event);
             }
             Trigger::Merge { to, from, stages } => {
                 info!(
@@ -407,7 +385,7 @@ fn event_to_pipeline(
                     to,
                     event.app.full_name()
                 );
-                result = handle_merge_trigger(artifact_provider, result, event, to, from, stages);
+                result = handle_merge_trigger(result, event, to, from, stages);
             }
             Trigger::Tag { pattern, stages } => {
                 info!(
@@ -415,7 +393,7 @@ fn event_to_pipeline(
                     pattern,
                     event.app.full_name()
                 );
-                result = handle_tag_trigger(artifact_provider, result, event, pattern, stages);
+                result = handle_tag_trigger(result, event, pattern, stages);
             }
         }
     }
@@ -435,7 +413,7 @@ pub fn handle_web_hook_event<T: InterpretWebhooks>(
     interpreter
         .interpret_webhook_payload(request, runtime)
         .iter_mut()
-        .map(|e| event_to_pipeline(e, runtime.artifact_provider.as_ref()))
+        .map(event_to_pipeline)
         .filter_map(|o| o)
         .collect()
 }
