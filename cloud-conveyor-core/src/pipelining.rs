@@ -108,6 +108,8 @@ struct Notify;
 /// approval action would only occur if that group is set.
 ///
 ///  ```rust
+///  use cloud_conveyor_core::pipelining::{Pipeline, Approval};
+/// use cloud_conveyor_core::ApprovalGroup;
 ///  let approve = Approval {
 ///      approval_group: ApprovalGroup::Slack{ people: vec![] },
 ///      stage_name: "prod".to_string(),
@@ -157,8 +159,9 @@ impl Perform for Approval {
 /// it context's implementation of [BuildSource](../build.trait.BuildSource.html).
 ///
 ///  ```rust
+///  use cloud_conveyor_core::pipelining::{Pipeline, Build};
 ///  let build = Build {
-///      sha:  "cda888fd29a23fdb2d905e4ab6cf50230ce4c37b".to_string()
+///      sha:  "cda888fd29a23fdb2d905e4ab6cf50230ce4c37b".to_string(),
 ///      repo:  "git@github.com:resilient-vitality/cloud-conveyor.git".to_string(),
 ///  };
 ///
@@ -199,8 +202,20 @@ impl Perform for Build {
 ///  by passing itself down to  it context's implementation of [DeployInfrastructure](../build.trait.DeployInfrastructure.html).
 ///
 ///  ```rust
+///  use cloud_conveyor_core::pipelining::{Pipeline, Deploy};
+///  # use cloud_conveyor_core::{Account, Stage};
+///  # let account = Account {
+///  #      name: "hello".to_string(),
+/// #       id: 0,
+///  #      regions: vec![]
+///  # };
+///  # let stage = Stage {
+///  #      name: "hello_word".to_string(),
+/// #       approval_group: None,
+/// #       account
+/// # };
 ///  let deploy = Deploy::new (
-///     /* Some stage */,
+///     stage,
 ///     "git@github.com:resilient-vitality/cloud-conveyor.git".to_string(),
 ///      "cda888fd29a23fdb2d905e4ab6cf50230ce4c37b".to_string()
 ///  );
@@ -227,8 +242,21 @@ impl Deploy {
     /// Creates a new deployment job.
     ///
     ///  ```rust
+    ///  use cloud_conveyor_core::pipelining::{Pipeline, Deploy};
+    ///  # use cloud_conveyor_core::{Account, Stage};
+    ///  # let account = Account {
+    ///  #      name: "hello".to_string(),
+    /// #       id: 0,
+    ///  #      regions: vec![]
+    ///  # };
+    ///  # let stage = Stage {
+    ///  #      name: "hello_word".to_string(),
+    /// #       approval_group: None,
+    /// #       account
+    /// # };
+    ///
     ///  let deploy = Deploy::new (
-    ///     /* Some stage */,
+    ///     stage,
     ///     "git@github.com:resilient-vitality/cloud-conveyor.git".to_string(),
     ///      "cda888fd29a23fdb2d905e4ab6cf50230ce4c37b".to_string()
     ///  );
@@ -272,11 +300,24 @@ impl Perform for Deploy {
 /// have enabled both pr builds and deploys, temporary application stacks are stood up to allow for
 /// swift iteration on changes made in that PR. However, when the pr is closed, it would not be good
 /// to leave that stack laying around. So the undeploy job will delete that stage using the appropriate
-/// infrastructure tooling for the stage provided.
+/// infrastructure tooling for the stage provided.'
 ///
 ///  ```rust
+///  use cloud_conveyor_core::pipelining::{Pipeline, Undeploy};
+///  # use cloud_conveyor_core::{Account, Stage};
+///  # let account = Account {
+///  #      name: "hello".to_string(),
+/// #       id: 0,
+///  #      regions: vec![]
+///  # };
+///  # let stage = Stage {
+///  #      name: "hello_word".to_string(),
+/// #       approval_group: None,
+/// #       account
+/// # };
+///   
 ///  let undeploy = Undeploy {
-///      stage:  /* Some stage */,
+///      stage: stage,
 ///      repo:  "git@github.com:resilient-vitality/cloud-conveyor.git".to_string()
 ///  };
 ///
