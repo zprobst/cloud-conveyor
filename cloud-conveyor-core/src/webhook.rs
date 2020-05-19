@@ -165,10 +165,7 @@ fn add_build_and_deploy_stages(
     deploy_stages: Vec<Stage>,
     event: &mut WebhookEvent<'_>,
 ) -> Pipeline {
-    let build_action = Build {
-        repo: event.repo.clone(),
-        sha: sha.to_string(),
-    };
+    let build_action = Build::new(event.repo.clone(), sha.to_string());
     info!(
         "Pushing build action for  for sha {:?} with action {:?} ",
         sha, build_action
@@ -329,10 +326,7 @@ fn handle_pr_trigger(
             // If there is a stage, we need to "undeploy" it from the appropriate
             // account.  We do not need to do any kind of final builds.
             if let Some(stage) = stage {
-                let teardown = Teardown {
-                    stage: stage.clone(),
-                    repo: event.repo.clone(),
-                };
+                let teardown = Teardown::new(stage.clone(), event.repo.clone());
                 return pipeline
                     .unwrap_or_default()
                     .add_action(Box::new(teardown))

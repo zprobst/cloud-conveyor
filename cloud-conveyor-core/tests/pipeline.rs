@@ -6,14 +6,8 @@ fn pipeline_allows_one_build() {
     let mut pipeline = Pipeline::default();
     let sha = "some_sha_here";
     let repo = "some_repo_here";
-    let build_one = Build {
-        sha: sha.to_string(),
-        repo: repo.to_string(),
-    };
-    let build_two = Build {
-        sha: sha.to_string(),
-        repo: repo.to_string(),
-    };
+    let build_one = Build::new(sha.to_string(), repo.to_string());
+    let build_two = Build::new(sha.to_string(), repo.to_string());
     pipeline = pipeline
         .add_action(Box::new(build_one))
         .add_action(Box::new(build_two));

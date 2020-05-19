@@ -4,6 +4,7 @@ use crate::runtime::RuntimeContext;
 use crate::Application;
 
 use failure::Error;
+use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
 /// Determines the current status of a stack deployment. This information should signal
@@ -11,7 +12,7 @@ use std::fmt::Debug;
 /// the state. For instance, if an api call fails when trying to check the state, `Failed` should
 /// not be returned. Instead the Result should be Err and the appropriate error information
 /// should be provided by [BuildPollError](enum.BuildPollError.html).]
-#[derive(Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum BuildStatus {
     /// Indicates that the build was complete and the result was a success.
     Succeeded {

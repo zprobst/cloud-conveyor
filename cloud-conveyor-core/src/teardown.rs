@@ -34,7 +34,7 @@ pub enum TeardownPollError {
 /// the state. For instance, if an api call fails when trying to check the state, `Failed` should
 /// not be returned. Instead the Result should be Err and the appropriate error information
 /// should be provided by [TeardownPollError](enum.TeardownPollError.html).]
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub enum TeardownStatus {
     /// Indicates that the stack update was a complete and the result was a success.
     Complete,
@@ -63,7 +63,7 @@ pub trait TeardownInfrastructure: Debug {
     /// it is considered an invariant that we call a teardown on a stage that was never deployed.
     ///
     /// If an error occurs when triggering the teardown, use the appropriate variant of  [TeardownPollError](enum.TeardownPollError.html)
-    fn start_deployment(
+    fn start_teardown(
         &self,
         deploy: &Teardown,
         ctx: &RuntimeContext,
@@ -77,7 +77,7 @@ pub trait TeardownInfrastructure: Debug {
     /// does not allow the continuation of the pipeline, then return [TeardownStatus::Failed](enum.TeardownStatus.html#variant.Failed)
     ///
     /// If an error occurs when polling the state of the teardown, use the appropriate variant of  [TeardownStatus](enum.DeployPollError.html)
-    fn check_deployment(
+    fn check_teardown(
         &self,
         deploy: &Teardown,
         ctx: &RuntimeContext,
