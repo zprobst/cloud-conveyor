@@ -1,5 +1,7 @@
 # Cloud Conveyor
 Build and Deploy Service Pipelines with Chat Ops Anywhere.
+[![codecov](https://codecov.io/gh/zprobst/cloud-conveyor/branch/master/graph/badge.svg)](https://codecov.io/gh/zprobst/cloud-conveyor)
+[![travis](https://travis-ci.com/zprobst/cloud-conveyor.svg?branch=master)](https://travis-ci.com/github/zprobst/cloud-conveyor)
 
 ## Motivation
 Many CI / CD Providers have a pretty significant markup on build time compared to a cloud provider. And cloud provider solutions like CodePipeline are by there nature vendor specific and make it difficult to switch between cloud providers, make complex pipelines, or deploy to more than one cloud provider. 

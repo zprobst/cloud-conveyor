@@ -8,7 +8,7 @@ use std::fmt::Debug;
 ///  [TeardownInfrastructure](trait.TeardownInfrastructure.html) trait. This is meant to convey
 /// that the operation was not a success - not that the deployment itself was a failure. That
 /// information can be conveyed by returning Ok with a `Failed` value in [DeployStatus](enum.DeployStatus.html).
-#[derive(Debug, Fail)]
+#[derive(Debug, Clone, Fail)]
 pub enum TeardownPollError {
     /// When credentials are an issue, either because they were considered invalid or because of
     /// they could not be obtained for some reason, the  Credentials variant should be used.
@@ -16,7 +16,7 @@ pub enum TeardownPollError {
     Credentials,
 
     /// When a stack cannot be deleted entirely then this should be used.
-    #[fail(display = "Failed to get credentials or the credentials were invalid.")]
+    #[fail(display = "When a stack cannot be deleted entirely and should be.")]
     CannotDelete,
 
     /// When the cause does not fit any of the known patterns defined else where in the enum,
