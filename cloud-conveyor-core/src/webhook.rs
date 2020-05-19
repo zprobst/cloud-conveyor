@@ -21,7 +21,7 @@
 // necessary evil. We have to have a lot of owned information in structures because many of the types in the
 // core library implement serialize and deserialize for downstream crates.
 
-use crate::pipelining::{Approval, Build, Deploy, Pipeline, Undeploy};
+use crate::pipelining::{Approval, Build, Deploy, Pipeline, Teardown};
 use crate::runtime::RuntimeContext;
 use crate::{Application, Stage, Trigger};
 use log::info;
@@ -329,13 +329,13 @@ fn handle_pr_trigger(
             // If there is a stage, we need to "undeploy" it from the appropriate
             // account.  We do not need to do any kind of final builds.
             if let Some(stage) = stage {
-                let undeploy_action = Undeploy {
+                let teardown = Teardown {
                     stage: stage.clone(),
                     repo: event.repo.clone(),
                 };
                 return pipeline
                     .unwrap_or_default()
-                    .add_action(Box::new(undeploy_action))
+                    .add_action(Box::new(teardown))
                     .into();
             }
             pipeline

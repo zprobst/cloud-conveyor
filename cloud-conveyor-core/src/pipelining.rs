@@ -293,17 +293,17 @@ impl Perform for Deploy {
     }
 }
 
-/// The Undeploy action is responsible for managing the deletion of stacks that are no longer required.
+/// The `Teardown` action is responsible for managing the deletion of stacks that are no longer required.
 /// It does so by implementing the [Perform](trait.Perform.html) trait.
 ///
 /// For example, the most common usage of this is when a pull request is closed. For applications that
 /// have enabled both pr builds and deploys, temporary application stacks are stood up to allow for
 /// swift iteration on changes made in that PR. However, when the pr is closed, it would not be good
-/// to leave that stack laying around. So the undeploy job will delete that stage using the appropriate
+/// to leave that stack laying around. So the `Teardown` job will delete that stage using the appropriate
 /// infrastructure tooling for the stage provided.'
 ///
 ///  ```rust
-///  use cloud_conveyor_core::pipelining::{Pipeline, Undeploy};
+///  use cloud_conveyor_core::pipelining::{Pipeline, Teardown};
 ///  # use cloud_conveyor_core::{Account, Stage};
 ///  # let account = Account {
 ///  #      name: "hello".to_string(),
@@ -316,19 +316,19 @@ impl Perform for Deploy {
 /// #       account
 /// # };
 ///   
-///  let undeploy = Undeploy {
+///  let teardown = Teardown {
 ///      stage: stage,
 ///      repo:  "git@github.com:resilient-vitality/cloud-conveyor.git".to_string()
 ///  };
 ///
 /// let pipeline = Pipeline::empty();
-/// pipeline.add_action(Box::new(undeploy));
+/// pipeline.add_action(Box::new(teardown));
 /// ```
 ///  See the implementation for the [webhook](../webhook/index.html) module for
 /// more information on its consumption.
 ///
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-pub struct Undeploy {
+pub struct Teardown {
     /// The stage to remove from the application. This stage will be deleted when the application
     pub stage: Stage,
     /// The repo of the application in question. The repo is used to capture what application the stage
@@ -336,7 +336,7 @@ pub struct Undeploy {
     pub repo: String,
 }
 
-impl Perform for Undeploy {
+impl Perform for Teardown {
     fn start(&mut self, _: &RuntimeContext) -> std::result::Result<(), Error> {
         todo!()
     }
