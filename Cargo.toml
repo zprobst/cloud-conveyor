@@ -1,0 +1,7 @@
+[workspace]
+
+members = [
+    "cloud-conveyor-cli",
+    "cloud-conveyor-core",
+    "cloud-conveyor-github",
+]
