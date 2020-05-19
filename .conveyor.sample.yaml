@@ -1,8 +1,7 @@
 # This will most likely match the group/repo in github.
-org: resilient-vitality
-app: api
+org: zprobst
+app: my-awesome-service
 
-# Conveyor supports multiple accounts and curretly only aws.
 accounts:
   - name: default
     id: 123456789
@@ -14,9 +13,7 @@ accounts:
     regions:
       - us-east-1
       - us-west-1
-  
-# Approvals are currently supported with slack.
-approvals:
+  approvals:
   prod:
     type: slack
     people:
