@@ -4,45 +4,44 @@
 //! provider in which cloud conveyor is running. Traits such as where to store artifacts, how to build the application,
 //! and the like are defined here and provide the standard interface bindings that all of the runtime implementations
 //! can provide.
-//!
 
+use crate::build::{BuildSource, ProvideArtifactLocation};
+use crate::deploy::DeployInfrastructure;
 use crate::Application;
 use std::fmt::Debug;
-
-/// TODO
-pub trait ProvideArtifact: Debug {
-    /// TODO
-    fn get_bucket(&self, app: &Application) -> String;
-    /// TODO
-    fn get_folder(&self, app: &Application, git_sha: &str) -> String;
-}
-
-/// TODO
-pub trait Build: Debug {}
+use std::ops::{Deref, DerefMut};
 
 /// TODO
 #[derive(Debug)]
-pub struct RuntimeContext<'artifact, 'builder> {
+pub struct RuntimeContext {
     /// TODO
-    pub artifact_provider: &'artifact mut dyn ProvideArtifact,
+    pub artifact_provider: Box<dyn ProvideArtifactLocation>,
     /// TODO
-    pub builder: &'builder mut dyn Build,
+    pub builder: Box<dyn BuildSource>,
+    /// TODO
+    pub infrastructure: Box<dyn DeployInfrastructure>,
 }
 
-impl<'artifact, 'builder> RuntimeContext<'artifact, 'builder> {
-    /// Builds a new runtime context that will be passed to different things in the runtime.
-    pub fn new(
-        artifact_provider: &'artifact mut dyn ProvideArtifact,
-        builder: &'builder mut dyn Build,
-    ) -> Self {
-        Self {
-            artifact_provider,
-            builder,
-        }
-    }
-
+impl RuntimeContext {
     /// TODO
     pub fn load_application_from_repo(&self, _: &str) -> Option<&mut Application> {
         unimplemented!();
+    }
+}
+
+// TODO: We can do this with all of the things and do it
+// with a macro...
+
+impl Deref for RuntimeContext {
+    type Target = Box<dyn DeployInfrastructure + 'static>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.infrastructure
+    }
+}
+
+impl DerefMut for RuntimeContext {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.infrastructure
     }
 }

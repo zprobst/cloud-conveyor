@@ -5,11 +5,21 @@
 // TODO: We are probably going to need to serialize the pipeline.
 // Probably this is the solution: https://stackoverflow.com/questions/50021897
 
+use crate::deploy::DeployStatus;
 use crate::runtime::RuntimeContext;
 use crate::{ApprovalGroup, Stage};
+use failure::Error;
 use serde::{Deserialize, Serialize};
-use std::boxed::Box;
+use std::any::Any;
 use std::fmt::Debug;
+
+/// Specifies the ability to box an trait with equality.
+pub trait BoxableEq: Any {
+    /// Compares the internals of a box to another thing.
+    fn box_eq(&self, other: &dyn Any) -> bool;
+    /// Converts the ref to self as a ref to any.
+    fn as_any(&self) -> &dyn Any;
+}
 
 /// The result of performing an action via the [Perform](trait.Perform.html) trait.
 #[derive(Debug, Deserialize, Serialize)]
@@ -20,6 +30,10 @@ pub enum ActionResult {
     /// The failed state shows that job failed and that the rest of the pipeline cannot continue
     /// and needs to be cancelled.
     Failed,
+    /// This is for actions that failed but do not prevent the pipeline from continuing. For instance,
+    /// if sending a "status" message to slack, and the action fails, it is not critical to the pipeline and can
+    /// continue.
+    FailedAllow,
     /// The canceled state shows that  the action was never performed because a previous action
     /// in the pipeline failed. This should NOT be used in most cases for the return
     /// from [get_result](trait.Perform.html#tymethod.get_result) in the [Perform](trait.Perform.html) trait.
@@ -39,27 +53,56 @@ pub enum ActionResult {
 /// When there is a currently operating action, we need to determine if that thing is done. If it is
 /// not, we will wait more. If it is, we can fetch the result through the [get_result](#tymethod.get_result)
 /// function; the third and final method on the struct.
-pub trait Perform: Debug {
+pub trait Perform: BoxableEq + Debug {
     /// Does the work required to start the job in some sort of external context.
-    fn start(&mut self, ctx: &RuntimeContext<'_, '_>) -> Result<(), ()>;
+    fn start(&mut self, ctx: &RuntimeContext) -> Result<(), Error>;
 
     /// Does the work required to see if the job, in the external context, is done (regardless of success or fail).
     /// If it is done, Ok(true) should be returned. If not Ok(false).
-    fn is_done(&mut self, ctx: &RuntimeContext<'_, '_>) -> Result<bool, ()>;
+    fn is_done(&mut self, ctx: &RuntimeContext) -> Result<bool, Error>;
 
     /// Gets the final state of the job and returns a [ActionResult](enum.ActionResult.html). For information regarding
     /// when to return what version of [ActionResult](enum.ActionResult.html), see the docs on [ActionResult](enum.ActionResult.html).
-    fn get_result(&self, ctx: &RuntimeContext<'_, '_>) -> ActionResult;
+    fn get_result(&self, ctx: &RuntimeContext) -> ActionResult;
+
+    /// Provides additional jobs that should be done as a result of this action before the pipeline continues. Whatever
+    /// actions you provide in overriding this method, will be executed immediately after this job.
+    fn get_new_work(&self, _ctx: &RuntimeContext) -> Option<Vec<Box<dyn Perform>>> {
+        None
+    }
+}
+
+impl<T> BoxableEq for T
+where
+    T: Perform + PartialEq,
+{
+    fn box_eq(&self, other: &(dyn Any + 'static)) -> bool {
+        other.downcast_ref::<T>().map_or(false, |a| self == a)
+    }
+    fn as_any(&self) -> &(dyn Any + 'static) {
+        self
+    }
+}
+
+impl PartialEq for Box<dyn Perform> {
+    fn eq(&self, other: &Box<dyn Perform>) -> bool {
+        self.box_eq(other.as_any())
+    }
 }
 
 // TODO: FIll out the spec for this type.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 struct AppUpdate(String);
+
+// TODO: FIll out the spec for this type.
+// TODO: Add notifications to before and after builds and before and after deploys to an env.
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
+struct Notify;
 
 /// The Approval action is responsible for managing the need to get approval from a human prior to
 /// continuing through the pipeline. It does so by implementing the [Perform](trait.Perform.html) trait.
 ///
-/// For example,  this is used is many of the [Triggers](enum.Trigger.html) use the Approval action. Merges
+/// For example, this is used is many of the [Triggers](../../enum.Trigger.html) use the Approval action. Merges
 /// to a branch and pushes of a tag invoke deployments to [Stages](../struct.Stage.html) that may more many
 /// require approval by specifying an [ApprovalGroup](../struct.ApprovalGroup.html) and thus the creation of an
 /// approval action would only occur if that group is set.
@@ -71,10 +114,13 @@ struct AppUpdate(String);
 ///      sha: "cda888fd29a23fdb2d905e4ab6cf50230ce4c37b".to_string(),
 ///      app_name: "cloud_conveyor".to_string()
 ///  };
+///
+/// let pipeline = Pipeline::empty();
+/// pipeline.add_action(Box::new(approve));
 /// ```
 ///  See the implementation for the [webhook](../webhook/index.html) module for
 /// more information on its consumption.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct Approval {
     /// The approval group to use to ask approval with.
     pub approval_group: ApprovalGroup,
@@ -87,13 +133,13 @@ pub struct Approval {
 }
 
 impl Perform for Approval {
-    fn start(&mut self, _: &RuntimeContext<'_, '_>) -> std::result::Result<(), ()> {
+    fn start(&mut self, _: &RuntimeContext) -> std::result::Result<(), Error> {
         todo!()
     }
-    fn is_done(&mut self, _: &RuntimeContext<'_, '_>) -> std::result::Result<bool, ()> {
+    fn is_done(&mut self, _: &RuntimeContext) -> std::result::Result<bool, Error> {
         todo!()
     }
-    fn get_result(&self, _: &RuntimeContext<'_, '_>) -> ActionResult {
+    fn get_result(&self, _: &RuntimeContext) -> ActionResult {
         todo!()
     }
 }
@@ -107,42 +153,36 @@ impl Perform for Approval {
 ///
 /// Broadly speaking, the build type is an action that will invoke the building of the
 /// application's source using the [runtime](../runtime/index.html) configuration via
-/// the [RuntimeContext](../runtime/struct.RuntimeContext.html).
+/// the [RuntimeContext](../runtime/struct.RuntimeContext.html) by passing itself down to
+/// it context's implementation of [BuildSource](../build.trait.BuildSource.html).
 ///
 ///  ```rust
-///  let deploy = Build {
+///  let build = Build {
 ///      sha:  "cda888fd29a23fdb2d905e4ab6cf50230ce4c37b".to_string()
 ///      repo:  "git@github.com:resilient-vitality/cloud-conveyor.git".to_string(),
-///      artifact_bucket: "my_bucket".to_string(),
-///      artifact_folder: "org/app/my-code-sha/".to_string()
 ///  };
+///
+/// let pipeline = Pipeline::empty();
+/// pipeline.add_action(Box::new(build));
 /// ```
 ///  See the implementation for the [webhook](../webhook/index.html) module for
 /// more information on its consumption.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct Build {
     /// The ref to checkout.
     pub sha: String,
     /// The repo to check the code out from.
     pub repo: String,
-    /// The storage bucket to save the artifacts in. This value is semantically
-    /// a string but the value is only relevant to the [ProvideArtifact](../runtime/trait.ProvideArtifact.html)
-    /// implementation stored in the [RuntimeContext](../runtime/struct.RuntimeContext.html).
-    pub artifact_bucket: String,
-    /// The artifact path inside of the storage bucket to save the artifacts in. This value is semantically
-    /// a string but the value is only  relevant to the [ProvideArtifact](../runtime/trait.ProvideArtifact.html)
-    /// implementation stored in the [RuntimeContext](../runtime/struct.RuntimeContext.html).
-    pub artifact_folder: String,
 }
 
 impl Perform for Build {
-    fn start(&mut self, _: &RuntimeContext<'_, '_>) -> std::result::Result<(), ()> {
+    fn start(&mut self, _: &RuntimeContext) -> std::result::Result<(), Error> {
         todo!()
     }
-    fn is_done(&mut self, _: &RuntimeContext<'_, '_>) -> std::result::Result<bool, ()> {
+    fn is_done(&mut self, _: &RuntimeContext) -> std::result::Result<bool, Error> {
         todo!()
     }
-    fn get_result(&self, _: &RuntimeContext<'_, '_>) -> ActionResult {
+    fn get_result(&self, _: &RuntimeContext) -> ActionResult {
         todo!()
     }
 }
@@ -155,40 +195,73 @@ impl Perform for Build {
 /// The pattern for which that occurs is dependant on the inner type of the trigger.
 ///
 /// Broadly speaking, the deploy type is an action will invoke the creating or updating of a stack using
-/// the infrastructure controller managed by the [runtime](../runtime/index.html) via the [RuntimeContext](../runtime/struct.RuntimeContext.html).
+/// the infrastructure controller managed by the [runtime](../runtime/index.html) via the [RuntimeContext](../runtime/struct.RuntimeContext.html)
+///  by passing itself down to  it context's implementation of [DeployInfrastructure](../build.trait.DeployInfrastructure.html).
 ///
 ///  ```rust
-///  let deploy = Deploy {
-///      stage:  /* Some stage */,
-///      repo:  "git@github.com:resilient-vitality/cloud-conveyor.git".to_string(),
-///      artifact_bucket: "my_bucket".to_string(),
-///      artifact_folder: "org/app/my-code-sha/".to_string()
-///  };
+///  let deploy = Deploy::new (
+///     /* Some stage */,
+///     "git@github.com:resilient-vitality/cloud-conveyor.git".to_string(),
+///      "cda888fd29a23fdb2d905e4ab6cf50230ce4c37b".to_string()
+///  );
+///
+/// let pipeline = Pipeline::empty();
+/// pipeline.add_action(Box::new(deploy));
 /// ```
 ///  See the implementation for the [webhook](../webhook/index.html) module for
 /// more information on its consumption.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct Deploy {
-    /// The artifact bucket to get the artifacts from.
-    pub artifact_bucket: String,
-    /// The path inside of the bucket to store the artifacts.
-    pub artifact_folder: String,
     /// The stage definition to load.
     pub stage: Stage,
     /// The repo of the application in question. The repo is used to capture what application the stage
     /// belongs to with storing the application or a reference to it.
     pub repo: String,
+    /// The sha of the code to deploy.
+    pub sha: String,
+    /// The completed status of the deployment.
+    result: Option<DeployStatus>,
+}
+
+impl Deploy {
+    /// Creates a new deployment job.
+    ///
+    ///  ```rust
+    ///  let deploy = Deploy::new (
+    ///     /* Some stage */,
+    ///     "git@github.com:resilient-vitality/cloud-conveyor.git".to_string(),
+    ///      "cda888fd29a23fdb2d905e4ab6cf50230ce4c37b".to_string()
+    ///  );
+    ///
+    /// ```
+    pub fn new(stage: Stage, repo: String, sha: String) -> Self {
+        Self {
+            sha,
+            stage,
+            repo,
+            result: None,
+        }
+    }
 }
 
 impl Perform for Deploy {
-    fn start(&mut self, _: &RuntimeContext<'_, '_>) -> std::result::Result<(), ()> {
-        todo!()
+    fn start(&mut self, ctx: &RuntimeContext) -> Result<(), Error> {
+        ctx.start_deployment(&*self, ctx).map_err(|e| e.into())
     }
-    fn is_done(&mut self, _: &RuntimeContext<'_, '_>) -> std::result::Result<bool, ()> {
-        todo!()
+    fn is_done(&mut self, ctx: &RuntimeContext) -> Result<bool, Error> {
+        match ctx.check_deployment(&*self, ctx) {
+            Ok(status) => match status {
+                DeployStatus::Pending => Ok(false),
+                _ => Ok(true),
+            },
+            Err(reason) => Err(reason.into()),
+        }
     }
-    fn get_result(&self, _: &RuntimeContext<'_, '_>) -> ActionResult {
-        todo!()
+    fn get_result(&self, _: &RuntimeContext) -> ActionResult {
+        match self.result.as_ref().unwrap() {
+            DeployStatus::Complete => ActionResult::Success,
+            _ => ActionResult::Failed,
+        }
     }
 }
 
@@ -206,11 +279,14 @@ impl Perform for Deploy {
 ///      stage:  /* Some stage */,
 ///      repo:  "git@github.com:resilient-vitality/cloud-conveyor.git".to_string()
 ///  };
+///
+/// let pipeline = Pipeline::empty();
+/// pipeline.add_action(Box::new(undeploy));
 /// ```
 ///  See the implementation for the [webhook](../webhook/index.html) module for
 /// more information on its consumption.
 ///
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct Undeploy {
     /// The stage to remove from the application. This stage will be deleted when the application
     pub stage: Stage,
@@ -220,18 +296,18 @@ pub struct Undeploy {
 }
 
 impl Perform for Undeploy {
-    fn start(&mut self, _: &RuntimeContext<'_, '_>) -> std::result::Result<(), ()> {
+    fn start(&mut self, _: &RuntimeContext) -> std::result::Result<(), Error> {
         todo!()
     }
-    fn is_done(&mut self, _: &RuntimeContext<'_, '_>) -> std::result::Result<bool, ()> {
+    fn is_done(&mut self, _: &RuntimeContext) -> std::result::Result<bool, Error> {
         todo!()
     }
-    fn get_result(&self, _: &RuntimeContext<'_, '_>) -> ActionResult {
+    fn get_result(&self, _: &RuntimeContext) -> ActionResult {
         todo!()
     }
 }
 
-/// A pipeline is a series of actions that need to be performed in order. It is like a stack, responsible
+/// A pipeline is a series of actions that need to be performed in order. It is like a queue, responsible
 /// for popping and pushing actions that implement the [Perform](trait.Perform.html) trait.
 #[derive(Debug)]
 pub struct Pipeline {
@@ -253,7 +329,16 @@ impl Pipeline {
 
     /// Adds a new action to the pipeline that can be performed.
     pub fn add_action(mut self, action: Box<dyn Perform>) -> Self {
-        self.pending_actions.push(action);
+        if !self.pending_actions.contains(&action) {
+            self.pending_actions.push(action);
+        }
+        self
+    }
+
+    /// The action is needed to be immediately done. This means that the next thing that
+    /// is popped off will be the action to specified.
+    pub fn add_immediate_action(mut self, action: Box<dyn Perform>) -> Self {
+        self.pending_actions.insert(0, action);
         self
     }
 

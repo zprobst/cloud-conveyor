@@ -1,0 +1,3 @@
+trait Approve {}
+
+trait Notify {}
