@@ -10,7 +10,16 @@ use crate::runtime::RuntimeContext;
 use crate::{ApprovalGroup, Stage};
 use failure::Error;
 use serde::{Deserialize, Serialize};
+use std::any::Any;
 use std::fmt::Debug;
+
+/// Specifies the ability to box an trait with equality.
+pub trait BoxableEq: Any {
+    /// Compares the internals of a box to another thing.
+    fn box_eq(&self, other: &dyn Any) -> bool;
+    /// Converts the ref to self as a ref to any.
+    fn as_any(&self) -> &dyn Any;
+}
 
 /// The result of performing an action via the [Perform](trait.Perform.html) trait.
 #[derive(Debug, Deserialize, Serialize)]
@@ -44,7 +53,7 @@ pub enum ActionResult {
 /// When there is a currently operating action, we need to determine if that thing is done. If it is
 /// not, we will wait more. If it is, we can fetch the result through the [get_result](#tymethod.get_result)
 /// function; the third and final method on the struct.
-pub trait Perform: Debug {
+pub trait Perform: BoxableEq + Debug {
     /// Does the work required to start the job in some sort of external context.
     fn start(&mut self, ctx: &RuntimeContext) -> Result<(), Error>;
 
@@ -63,13 +72,31 @@ pub trait Perform: Debug {
     }
 }
 
+impl<T> BoxableEq for T
+where
+    T: Perform + PartialEq,
+{
+    fn box_eq(&self, other: &(dyn Any + 'static)) -> bool {
+        other.downcast_ref::<T>().map_or(false, |a| self == a)
+    }
+    fn as_any(&self) -> &(dyn Any + 'static) {
+        self
+    }
+}
+
+impl PartialEq for Box<dyn Perform> {
+    fn eq(&self, other: &Box<dyn Perform>) -> bool {
+        self.box_eq(other.as_any())
+    }
+}
+
 // TODO: FIll out the spec for this type.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 struct AppUpdate(String);
 
 // TODO: FIll out the spec for this type.
 // TODO: Add notifications to before and after builds and before and after deploys to an env.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 struct Notify;
 
 /// The Approval action is responsible for managing the need to get approval from a human prior to
@@ -93,7 +120,7 @@ struct Notify;
 /// ```
 ///  See the implementation for the [webhook](../webhook/index.html) module for
 /// more information on its consumption.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct Approval {
     /// The approval group to use to ask approval with.
     pub approval_group: ApprovalGroup,
@@ -140,7 +167,7 @@ impl Perform for Approval {
 /// ```
 ///  See the implementation for the [webhook](../webhook/index.html) module for
 /// more information on its consumption.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct Build {
     /// The ref to checkout.
     pub sha: String,
@@ -183,7 +210,7 @@ impl Perform for Build {
 /// ```
 ///  See the implementation for the [webhook](../webhook/index.html) module for
 /// more information on its consumption.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct Deploy {
     /// The stage definition to load.
     pub stage: Stage,
@@ -259,7 +286,7 @@ impl Perform for Deploy {
 ///  See the implementation for the [webhook](../webhook/index.html) module for
 /// more information on its consumption.
 ///
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct Undeploy {
     /// The stage to remove from the application. This stage will be deleted when the application
     pub stage: Stage,
@@ -302,7 +329,9 @@ impl Pipeline {
 
     /// Adds a new action to the pipeline that can be performed.
     pub fn add_action(mut self, action: Box<dyn Perform>) -> Self {
-        self.pending_actions.push(action);
+        if !self.pending_actions.contains(&action) {
+            self.pending_actions.push(action);
+        }
         self
     }
 

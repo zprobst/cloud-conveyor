@@ -30,7 +30,7 @@ pub enum DeployPollError {
 /// the state. For instance, if an api call fails when trying to check the state, `Failed` should
 /// not be returned. Instead the Result should be Err and the appropriate error information
 /// should be provided by [DeployPollError](enum.DeployPollError.html).]
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub enum DeployStatus {
     /// Indicates that the stack update was a complete and the result was a success.
     Complete,
