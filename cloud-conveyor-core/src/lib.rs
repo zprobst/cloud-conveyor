@@ -17,6 +17,7 @@ pub mod chat;
 pub mod deploy;
 pub mod pipelining;
 pub mod runtime;
+pub mod teardown;
 pub mod webhook;
 pub mod yaml;
 
