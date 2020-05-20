@@ -5,8 +5,10 @@
 // TODO: We are probably going to need to serialize the pipeline.
 // Probably this is the solution: https://stackoverflow.com/questions/50021897
 
+use crate::build::BuildStatus;
 use crate::deploy::DeployStatus;
 use crate::runtime::RuntimeContext;
+use crate::teardown::TeardownStatus;
 use crate::{ApprovalGroup, Stage};
 use failure::Error;
 use serde::{Deserialize, Serialize};
@@ -160,10 +162,10 @@ impl Perform for Approval {
 ///
 ///  ```rust
 ///  use cloud_conveyor_core::pipelining::{Pipeline, Build};
-///  let build = Build {
-///      sha:  "cda888fd29a23fdb2d905e4ab6cf50230ce4c37b".to_string(),
-///      repo:  "git@github.com:resilient-vitality/cloud-conveyor.git".to_string(),
-///  };
+///  let build = Build::new(
+///      "cda888fd29a23fdb2d905e4ab6cf50230ce4c37b".to_string(),
+///      "git@github.com:resilient-vitality/cloud-conveyor.git".to_string(),
+///  );
 ///
 /// let pipeline = Pipeline::empty();
 /// pipeline.add_action(Box::new(build));
@@ -176,17 +178,38 @@ pub struct Build {
     pub sha: String,
     /// The repo to check the code out from.
     pub repo: String,
+    result: Option<BuildStatus>,
+}
+
+impl Build {
+    /// Creates a new build job.
+    pub fn new(sha: String, repo: String) -> Self {
+        Self {
+            sha,
+            repo,
+            result: None,
+        }
+    }
 }
 
 impl Perform for Build {
-    fn start(&mut self, _: &RuntimeContext) -> std::result::Result<(), Error> {
-        todo!()
+    fn start(&mut self, ctx: &RuntimeContext) -> Result<(), Error> {
+        ctx.builder.start_build(&*self, ctx).map_err(|e| e.into())
     }
-    fn is_done(&mut self, _: &RuntimeContext) -> std::result::Result<bool, Error> {
-        todo!()
+    fn is_done(&mut self, ctx: &RuntimeContext) -> Result<bool, Error> {
+        match ctx.builder.check_build(&*self, ctx) {
+            Ok(status) => match status {
+                BuildStatus::Pending => Ok(false),
+                _ => Ok(true),
+            },
+            Err(reason) => Err(reason.into()),
+        }
     }
     fn get_result(&self, _: &RuntimeContext) -> ActionResult {
-        todo!()
+        match self.result.as_ref().unwrap() {
+            BuildStatus::Succeeded { logs: _ } => ActionResult::Success,
+            _ => ActionResult::Failed,
+        }
     }
 }
 
@@ -274,10 +297,12 @@ impl Deploy {
 
 impl Perform for Deploy {
     fn start(&mut self, ctx: &RuntimeContext) -> Result<(), Error> {
-        ctx.start_deployment(&*self, ctx).map_err(|e| e.into())
+        ctx.infrastructure
+            .start_deployment(&*self, ctx)
+            .map_err(|e| e.into())
     }
     fn is_done(&mut self, ctx: &RuntimeContext) -> Result<bool, Error> {
-        match ctx.check_deployment(&*self, ctx) {
+        match ctx.infrastructure.check_deployment(&*self, ctx) {
             Ok(status) => match status {
                 DeployStatus::Pending => Ok(false),
                 _ => Ok(true),
@@ -293,17 +318,17 @@ impl Perform for Deploy {
     }
 }
 
-/// The Undeploy action is responsible for managing the deletion of stacks that are no longer required.
+/// The `Teardown` action is responsible for managing the deletion of stacks that are no longer required.
 /// It does so by implementing the [Perform](trait.Perform.html) trait.
 ///
 /// For example, the most common usage of this is when a pull request is closed. For applications that
 /// have enabled both pr builds and deploys, temporary application stacks are stood up to allow for
 /// swift iteration on changes made in that PR. However, when the pr is closed, it would not be good
-/// to leave that stack laying around. So the undeploy job will delete that stage using the appropriate
+/// to leave that stack laying around. So the `Teardown` job will delete that stage using the appropriate
 /// infrastructure tooling for the stage provided.'
 ///
 ///  ```rust
-///  use cloud_conveyor_core::pipelining::{Pipeline, Undeploy};
+///  use cloud_conveyor_core::pipelining::{Pipeline, Teardown};
 ///  # use cloud_conveyor_core::{Account, Stage};
 ///  # let account = Account {
 ///  #      name: "hello".to_string(),
@@ -316,35 +341,58 @@ impl Perform for Deploy {
 /// #       account
 /// # };
 ///   
-///  let undeploy = Undeploy {
-///      stage: stage,
-///      repo:  "git@github.com:resilient-vitality/cloud-conveyor.git".to_string()
-///  };
+///  let teardown = Teardown::new(
+///       stage,
+///      "git@github.com:resilient-vitality/cloud-conveyor.git".to_string()
+///  );
 ///
 /// let pipeline = Pipeline::empty();
-/// pipeline.add_action(Box::new(undeploy));
+/// pipeline.add_action(Box::new(teardown));
 /// ```
 ///  See the implementation for the [webhook](../webhook/index.html) module for
 /// more information on its consumption.
 ///
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-pub struct Undeploy {
+pub struct Teardown {
     /// The stage to remove from the application. This stage will be deleted when the application
     pub stage: Stage,
     /// The repo of the application in question. The repo is used to capture what application the stage
     /// belongs to with storing the application or a reference to it.
     pub repo: String,
+    result: Option<TeardownStatus>,
 }
 
-impl Perform for Undeploy {
-    fn start(&mut self, _: &RuntimeContext) -> std::result::Result<(), Error> {
-        todo!()
+impl Teardown {
+    /// Creates a new teardown action for a given stage.
+    pub fn new(stage: Stage, repo: String) -> Self {
+        Self {
+            stage,
+            repo,
+            result: None,
+        }
     }
-    fn is_done(&mut self, _: &RuntimeContext) -> std::result::Result<bool, Error> {
-        todo!()
+}
+
+impl Perform for Teardown {
+    fn start(&mut self, ctx: &RuntimeContext) -> Result<(), Error> {
+        ctx.teardown
+            .start_teardown(&*self, ctx)
+            .map_err(|e| e.into())
+    }
+    fn is_done(&mut self, ctx: &RuntimeContext) -> Result<bool, Error> {
+        match ctx.teardown.check_teardown(&*self, ctx) {
+            Ok(status) => match status {
+                TeardownStatus::Pending => Ok(false),
+                _ => Ok(true),
+            },
+            Err(reason) => Err(reason.into()),
+        }
     }
     fn get_result(&self, _: &RuntimeContext) -> ActionResult {
-        todo!()
+        match self.result.as_ref().unwrap() {
+            TeardownStatus::Complete => ActionResult::Success,
+            _ => ActionResult::Failed,
+        }
     }
 }
 

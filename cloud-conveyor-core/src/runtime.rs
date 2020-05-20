@@ -7,9 +7,9 @@
 
 use crate::build::{BuildSource, ProvideArtifactLocation};
 use crate::deploy::DeployInfrastructure;
+use crate::teardown::TeardownInfrastructure;
 use crate::Application;
 use std::fmt::Debug;
-use std::ops::{Deref, DerefMut};
 
 /// TODO
 #[derive(Debug)]
@@ -20,28 +20,13 @@ pub struct RuntimeContext {
     pub builder: Box<dyn BuildSource>,
     /// TODO
     pub infrastructure: Box<dyn DeployInfrastructure>,
+    /// TODO
+    pub teardown: Box<dyn TeardownInfrastructure>,
 }
 
 impl RuntimeContext {
     /// TODO
     pub fn load_application_from_repo(&self, _: &str) -> Option<&mut Application> {
         unimplemented!();
-    }
-}
-
-// TODO: We can do this with all of the things and do it
-// with a macro...
-
-impl Deref for RuntimeContext {
-    type Target = Box<dyn DeployInfrastructure + 'static>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.infrastructure
-    }
-}
-
-impl DerefMut for RuntimeContext {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.infrastructure
     }
 }
