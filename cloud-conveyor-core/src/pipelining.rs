@@ -1,12 +1,12 @@
 //! Defines the high order types for saving regarding the state of a pipeline. While this
 //! code does not produce a pipeline (that exists in places like webhook), it does provide
 //! patterns for interacting with and operating on a pipeline.
-
 use crate::build::BuildStatus;
 use crate::deploy::DeployStatus;
 use crate::runtime::RuntimeContext;
 use crate::teardown::TeardownStatus;
 use crate::{ApprovalGroup, Stage};
+
 use failure::Error;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
