@@ -227,7 +227,7 @@ impl Perform for Build {
             self.sha, self.repo
         );
         match self.result.as_ref().unwrap() {
-            BuildStatus::Succeeded { logs: _ } => {
+            BuildStatus::Succeeded { .. } => {
                 info!(
                     "Build completed successfully: sha {:?} for repo {:?} ",
                     self.sha, self.repo
