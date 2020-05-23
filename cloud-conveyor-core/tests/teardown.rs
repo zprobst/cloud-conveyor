@@ -11,16 +11,16 @@ struct TestImpl(
 impl TeardownInfrastructure for TestImpl {
     fn start_teardown(
         &self,
-        deploy: &Teardown,
-        ctx: &RuntimeContext,
+        _deploy: &Teardown,
+        _ctx: &RuntimeContext,
     ) -> Result<(), TeardownPollError> {
         self.0.to_owned()
     }
 
     fn check_teardown(
         &self,
-        deploy: &Teardown,
-        ctx: &RuntimeContext,
+        _deploy: &Teardown,
+        _ctx: &RuntimeContext,
     ) -> Result<TeardownStatus, TeardownPollError> {
         self.1.to_owned()
     }

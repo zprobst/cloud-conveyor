@@ -32,7 +32,9 @@ pub mod yaml;
 /// Currently, on the slack type is supported.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct ApprovalGroup {
-    people: Vec<String>,
+    /// The identifiers of the people who can approve or reject
+    /// the stage deployment.
+    pub people: Vec<String>,
 }
 
 /// An account with a cloud provider with a cloud provider and the types to bind information'
