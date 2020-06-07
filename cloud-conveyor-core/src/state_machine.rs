@@ -31,7 +31,7 @@ impl StateMachine {
     /// Performs one cycle of the state machine by polling the current action's state. If the current
     /// action is completed, the result is evaluated and any new works is added to the pipeline to
     /// work on.
-    pub fn tick_machine_state(&mut self, context: &RuntimeContext) -> Result<bool, Error> {
+    pub async fn tick_machine_state(&mut self, context: &RuntimeContext) -> Result<bool, Error> {
         // Get the current action and see if it is done.
         if self.current_action.is_none() {
             return Ok(true);
@@ -42,7 +42,7 @@ impl StateMachine {
             .current_action
             .as_mut()
             .expect("Action does not exist despite just checking its value");
-        let is_done = action.is_done(context)?;
+        let is_done = action.is_done(context).await?;
 
         // If the current action is still going, we can just bail here.
         if !is_done {
@@ -80,7 +80,7 @@ impl StateMachine {
             let action = self.current_action.as_mut().unwrap();
             self.recommended_wait = START_WAIT_TIME;
             info!("Starting new action {:?}", action);
-            action.start(context)?;
+            action.start(context).await?;
         }
         Ok(has_remaining_actions)
     }

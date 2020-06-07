@@ -7,6 +7,7 @@ use cloud_conveyor_core::{
     Application,
 };
 
+use async_trait::async_trait;
 use derivative::Derivative;
 use failure::Error;
 use rusoto_cloudformation::{CloudFormation, CloudFormationClient};
@@ -23,11 +24,16 @@ struct Aws {
     region: Region,
 }
 
+#[async_trait]
 impl TeardownInfrastructure for Aws {
-    fn start_teardown(&self, _: &Teardown, _: &RuntimeContext) -> Result<(), TeardownPollError> {
+    async fn start_teardown(
+        &self,
+        _: &Teardown,
+        _: &RuntimeContext,
+    ) -> Result<(), TeardownPollError> {
         todo!()
     }
-    fn check_teardown(
+    async fn check_teardown(
         &self,
         _: &Teardown,
         _: &RuntimeContext,
@@ -36,11 +42,16 @@ impl TeardownInfrastructure for Aws {
     }
 }
 
+#[async_trait]
 impl DeployInfrastructure for Aws {
-    fn start_deployment(&self, _: &Deploy, _: &RuntimeContext) -> Result<(), DeployPollError> {
+    async fn start_deployment(
+        &self,
+        _: &Deploy,
+        _: &RuntimeContext,
+    ) -> Result<(), DeployPollError> {
         todo!()
     }
-    fn check_deployment(
+    async fn check_deployment(
         &self,
         _: &Deploy,
         _: &RuntimeContext,
@@ -49,20 +60,26 @@ impl DeployInfrastructure for Aws {
     }
 }
 
+#[async_trait]
 impl BuildSource for Aws {
-    fn start_build(&self, _: &Build, _: &RuntimeContext) -> Result<(), BuildPollError> {
+    async fn start_build(&self, _: &Build, _: &RuntimeContext) -> Result<(), BuildPollError> {
         todo!()
     }
-    fn check_build(&self, _: &Build, _: &RuntimeContext) -> Result<BuildStatus, BuildPollError> {
+    async fn check_build(
+        &self,
+        _: &Build,
+        _: &RuntimeContext,
+    ) -> Result<BuildStatus, BuildPollError> {
         todo!()
     }
 }
 
+#[async_trait]
 impl ProvideArtifactLocation for Aws {
-    fn get_bucket(&self, _: &Application) -> Result<String, Error> {
+    async fn get_bucket(&self, _: &Application) -> Result<String, Error> {
         todo!()
     }
-    fn get_folder(&self, _: &Application, _: &str) -> Result<String, Error> {
+    async fn get_folder(&self, _: &Application, _: &str) -> Result<String, Error> {
         todo!()
     }
 }

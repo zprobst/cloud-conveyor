@@ -7,6 +7,7 @@ use crate::runtime::RuntimeContext;
 use crate::teardown::TeardownStatus;
 use crate::{ApprovalGroup, Stage};
 
+use async_trait::async_trait;
 use failure::Error;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
@@ -55,13 +56,14 @@ pub enum ActionResult {
 /// not, we will wait more. If it is, we can fetch the result through the [get_result](#tymethod.get_result)
 /// function; the third and final method on the struct.
 #[typetag::serde(tag = "type")]
+#[async_trait]
 pub trait Perform: BoxableEq + Debug {
     /// Does the work required to start the job in some sort of external context.
-    fn start(&mut self, ctx: &RuntimeContext) -> Result<(), Error>;
+    async fn start(&mut self, ctx: &RuntimeContext) -> Result<(), Error>;
 
     /// Does the work required to see if the job, in the external context, is done (regardless of success or fail).
     /// If it is done, Ok(true) should be returned. If not Ok(false).
-    fn is_done(&mut self, ctx: &RuntimeContext) -> Result<bool, Error>;
+    async fn is_done(&mut self, ctx: &RuntimeContext) -> Result<bool, Error>;
 
     /// Gets the final state of the job and returns a [ActionResult](enum.ActionResult.html). For information regarding
     /// when to return what version of [ActionResult](enum.ActionResult.html), see the docs on [ActionResult](enum.ActionResult.html).
@@ -136,12 +138,13 @@ pub struct Approval {
     pub app_name: String,
 }
 
+#[async_trait]
 #[typetag::serde]
 impl Perform for Approval {
-    fn start(&mut self, _: &RuntimeContext) -> std::result::Result<(), Error> {
+    async fn start(&mut self, _: &RuntimeContext) -> std::result::Result<(), Error> {
         todo!()
     }
-    fn is_done(&mut self, _: &RuntimeContext) -> std::result::Result<bool, Error> {
+    async fn is_done(&mut self, _: &RuntimeContext) -> std::result::Result<bool, Error> {
         todo!()
     }
     fn get_result(&self, _: &RuntimeContext) -> ActionResult {
@@ -193,21 +196,25 @@ impl Build {
     }
 }
 
+#[async_trait]
 #[typetag::serde]
 impl Perform for Build {
-    fn start(&mut self, ctx: &RuntimeContext) -> Result<(), Error> {
+    async fn start(&mut self, ctx: &RuntimeContext) -> Result<(), Error> {
         info!(
             "Starting build: git_ref {:?} for repo {:?} ",
             self.git_ref, self.repo
         );
-        ctx.builder.start_build(&*self, ctx).map_err(|e| e.into())
+        ctx.builder
+            .start_build(&*self, ctx)
+            .await
+            .map_err(|e| e.into())
     }
-    fn is_done(&mut self, ctx: &RuntimeContext) -> Result<bool, Error> {
+    async fn is_done(&mut self, ctx: &RuntimeContext) -> Result<bool, Error> {
         info!(
             "Polling the state of the build: git_ref {:?} for repo {:?} ",
             self.git_ref, self.repo
         );
-        match ctx.builder.check_build(&*self, ctx) {
+        match ctx.builder.check_build(&*self, ctx).await {
             Ok(status) => match status {
                 BuildStatus::Pending => {
                     info!("Build still pending for git_ref {:?}", self.git_ref);
@@ -327,23 +334,25 @@ impl Deploy {
     }
 }
 
+#[async_trait]
 #[typetag::serde]
 impl Perform for Deploy {
-    fn start(&mut self, ctx: &RuntimeContext) -> Result<(), Error> {
+    async fn start(&mut self, ctx: &RuntimeContext) -> Result<(), Error> {
         info!(
             "Starting Deploy for sha: sha {:?} for repo {:?} to stage {:?}",
             self.git_ref, self.repo, self.stage
         );
         ctx.infrastructure
             .start_deployment(&*self, ctx)
+            .await
             .map_err(|e| e.into())
     }
-    fn is_done(&mut self, ctx: &RuntimeContext) -> Result<bool, Error> {
+    async fn is_done(&mut self, ctx: &RuntimeContext) -> Result<bool, Error> {
         info!(
             "Polling the state of the for ref: ref {:?} for repo {:?} to stage {:?}",
             self.git_ref, self.repo, self.stage
         );
-        match ctx.infrastructure.check_deployment(&*self, ctx) {
+        match ctx.infrastructure.check_deployment(&*self, ctx).await {
             Ok(status) => match status {
                 DeployStatus::Pending => {
                     info!(
@@ -439,23 +448,25 @@ impl Teardown {
     }
 }
 
+#[async_trait]
 #[typetag::serde]
 impl Perform for Teardown {
-    fn start(&mut self, ctx: &RuntimeContext) -> Result<(), Error> {
+    async fn start(&mut self, ctx: &RuntimeContext) -> Result<(), Error> {
         info!(
             "Starting Teardown for repo {:?} on stage {:?}",
             self.repo, self.stage
         );
         ctx.teardown
             .start_teardown(&*self, ctx)
+            .await
             .map_err(|e| e.into())
     }
-    fn is_done(&mut self, ctx: &RuntimeContext) -> Result<bool, Error> {
+    async fn is_done(&mut self, ctx: &RuntimeContext) -> Result<bool, Error> {
         info!(
             "Polling the state of teardown for repo {:?} on stage {:?}",
             self.repo, self.stage
         );
-        match ctx.teardown.check_teardown(&*self, ctx) {
+        match ctx.teardown.check_teardown(&*self, ctx).await {
             Ok(status) => match status {
                 TeardownStatus::Pending => {
                     info!(

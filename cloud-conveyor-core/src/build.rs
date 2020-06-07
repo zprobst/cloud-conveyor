@@ -3,6 +3,7 @@ use crate::pipelining::Build;
 use crate::runtime::RuntimeContext;
 use crate::Application;
 
+use async_trait::async_trait;
 use failure::Error;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
@@ -67,13 +68,14 @@ pub enum BuildPollError {
 /// to perform the build and poll the state of the build to see if it is done as opposed to building it locally
 /// or creating an ec2 instance to do the build. That is an extreme example, but the idea is to use the tools of the
 /// provider you are working with to do the work for you and have this implement the polling and reporting functionality only.
-pub trait BuildSource: Debug {
+#[async_trait]
+pub trait BuildSource: Debug + Sync + Send {
     /// Starts the build of the code given with [Build](../pipelining/struct.Build.html) data passed.
     /// Builds should be stage agnostic and are potentially re-used for more  than one [stage](../struct.Stage.html)
     /// deployment later in the pipeline. As such, you are not given access to the stage(s) the code is being built for.
     ///
     /// If an error occurs when triggering the build, use the appropriate variant of  [BuildPollError](enum.BuildPollError.html)
-    fn start_build(&self, build: &Build, ctx: &RuntimeContext) -> Result<(), BuildPollError>;
+    async fn start_build(&self, build: &Build, ctx: &RuntimeContext) -> Result<(), BuildPollError>;
 
     /// Polls the state of the build given the build data passed.
     /// If that final result of the build is not known use [BuildStatus::Pending](enum.BuildStatus.html#variant.Pending).
@@ -83,7 +85,7 @@ pub trait BuildSource: Debug {
     /// does not allow the continuation of the pipeline, then return [BuildStatus::Failed](enum.BuildStatus.html#variant.Failed)
     ///
     /// If an error occurs when polling the state of the build, use the appropriate variant of  [BuildPollError](enum.BuildPollError.html)
-    fn check_build(
+    async fn check_build(
         &self,
         build: &Build,
         ctx: &RuntimeContext,
@@ -99,15 +101,16 @@ pub trait BuildSource: Debug {
 ///
 /// The `ProvideArtifactLocation` trait works hard to be provider agnostic. To do so, the Result type is fairly generic
 /// and is a [failure::Error](../../failure/struct.Error.html) and has Ok type of String to represent the file paths.
-pub trait ProvideArtifactLocation: Debug {
+#[async_trait]
+pub trait ProvideArtifactLocation: Debug + Sync + Send {
     /// Gets the name of a storage bucket or location without a path to store the assets. This trait instance
     /// will be passed to the activated implementations of [BuildSource](trait.BuildSource.html) and
     /// [DeployInfrastructure](../deploy/trait.DeployInfrastructure.html) when they are invoked so they should
     /// understand and be able to interpret this value or need not to.
-    fn get_bucket(&self, app: &Application) -> Result<String, Error>;
+    async fn get_bucket(&self, app: &Application) -> Result<String, Error>;
     /// Gets the path to a folder in  a storage bucket from above. This trait instance
     /// will be passed to the activated implementations of [BuildSource](trait.BuildSource.html) and
     /// [DeployInfrastructure](../deploy/trait.DeployInfrastructure.html) when they are invoked so they should
     /// understand and be able to interpret this value or need not to.
-    fn get_folder(&self, app: &Application, git_sha: &str) -> Result<String, Error>;
+    async fn get_folder(&self, app: &Application, git_sha: &str) -> Result<String, Error>;
 }

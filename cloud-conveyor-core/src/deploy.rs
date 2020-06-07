@@ -1,6 +1,8 @@
 //! Defines the runtime abstraction for deploying infrastructure and reporting successes and failures when doing so.
 use crate::pipelining::Deploy;
 use crate::runtime::RuntimeContext;
+
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
@@ -54,13 +56,14 @@ pub enum DeployStatus {
 /// to deploy the infrastructure and poll the state of the stack to see if it is done as opposed to making api calls it create / update / delete
 /// infrastructure for stacks. That is an extreme example, but the idea is to use the tools of the provider you are deploying to do the work
 /// for you and have this implement the polling and reporting functionality.
-pub trait DeployInfrastructure: Debug {
+#[async_trait]
+pub trait DeployInfrastructure: Debug + Sync + Send {
     /// Starts the deployment of the infrastructure given the deployment data passed. Keep in mind that we do not,
     /// determine whether or not a stack exists ahead of time. To start a deployment, you must check if a stack exists
     /// and if not create the stack if required by the cloud provider. If the stack is there, you should update it.
     ///
     /// If an error occurs when triggering the deployment, use the appropriate variant of  [DeployPollError](enum.DeployPollError.html)
-    fn start_deployment(
+    async fn start_deployment(
         &self,
         deploy: &Deploy,
         ctx: &RuntimeContext,
@@ -74,7 +77,7 @@ pub trait DeployInfrastructure: Debug {
     /// does not allow the continuation of the pipeline, then return [DeployStatus::Failed](enum.DeployStatus.html#variant.Failed)
     ///
     /// If an error occurs when polling the state of the deployment, use the appropriate variant of  [DeployPollError](enum.DeployPollError.html)
-    fn check_deployment(
+    async fn check_deployment(
         &self,
         deploy: &Deploy,
         ctx: &RuntimeContext,

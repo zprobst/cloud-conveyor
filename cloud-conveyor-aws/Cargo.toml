@@ -6,6 +6,7 @@ edition = "2018"
 
 [dependencies]
 cloud-conveyor-core = { path = "../cloud-conveyor-core" }
+async-trait = "0.1.33"
 derivative = "2.1.1"
 failure = "0.1.8"
 rusoto_core = "0.44.0"

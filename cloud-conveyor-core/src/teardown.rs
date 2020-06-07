@@ -1,6 +1,8 @@
 //! Defines the runtime abstraction for tearing down infrastructure and reporting successes and failures when doing so.
 use crate::pipelining::Teardown;
 use crate::runtime::RuntimeContext;
+
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
@@ -58,12 +60,13 @@ pub enum TeardownStatus {
 /// to delete the infrastructure and poll the state of the stack to see if it is done as opposed to making api calls it delete
 /// infrastructure. That is an extreme example, but the idea is to use the tools of the provider you are deploying to do the work
 /// for you and have this implement the polling and reporting functionality.
-pub trait TeardownInfrastructure: Debug {
+#[async_trait]
+pub trait TeardownInfrastructure: Debug + Sync + Send {
     /// Starts the teardown of the infrastructure given the data passed. Keep in mind that we do not,
     /// it is considered an invariant that we call a teardown on a stage that was never deployed.
     ///
     /// If an error occurs when triggering the teardown, use the appropriate variant of  [TeardownPollError](enum.TeardownPollError.html)
-    fn start_teardown(
+    async fn start_teardown(
         &self,
         deploy: &Teardown,
         ctx: &RuntimeContext,
@@ -77,7 +80,7 @@ pub trait TeardownInfrastructure: Debug {
     /// does not allow the continuation of the pipeline, then return [TeardownStatus::Failed](enum.TeardownStatus.html#variant.Failed)
     ///
     /// If an error occurs when polling the state of the teardown, use the appropriate variant of  [TeardownStatus](enum.DeployPollError.html)
-    fn check_teardown(
+    async fn check_teardown(
         &self,
         deploy: &Teardown,
         ctx: &RuntimeContext,
