@@ -18,7 +18,7 @@ use crypto::mac::MacResult;
 use crypto::sha1::Sha1;
 use hex::FromHex;
 use serde::Deserialize;
-use serde_json::Error;
+use serde_json::{Error, Value};
 
 #[derive(Debug, Deserialize)]
 struct BranchData {
@@ -79,7 +79,7 @@ pub struct Github {
 }
 
 fn parse(body: String) -> Result<Vec<EventType>, Error> {
-    let json = serde_json::to_value(body)?;
+    let json: Value = serde_json::from_str(&body)?;
     let is_pull_request = json.pointer("/pull_request").is_some();
     if is_pull_request {
         let pr_data = serde_json::from_value(json)?;
@@ -91,6 +91,20 @@ fn parse(body: String) -> Result<Vec<EventType>, Error> {
 }
 
 impl Github {
+    /// Creates an unauthenticated instance of the webhook system.
+    /// WARNING: All events sent to it will be treated as legitimate.
+    pub fn unauthenticated() -> Self {
+        Self {
+            webhook_secret: None,
+        }
+    }
+    /// Created an authenticated instance of the webhook interpreter.
+    pub fn authenticated(secret: String) -> Self {
+        Self {
+            webhook_secret: Some(secret),
+        }
+    }
+
     fn authenticate(&self, payload: &str, signature: &[u8]) -> bool {
         if let Some(webhook_secret) = &self.webhook_secret {
             // Github gives you an HMAC code for the payload. Match it.
@@ -112,18 +126,27 @@ impl Github {
     }
 }
 
+impl Default for Github {
+    fn default() -> Self {
+        Self::unauthenticated()
+    }
+}
+
 impl InterpretWebhooks for Github {
     type Intermediary = EventType;
 
     fn parse_to_intermediary(&self, req: WebhookRequest) -> Vec<Self::Intermediary> {
-        // TODO: Validate the github signature.
+        // Signature might not be
         let signature_header = &req.headers["X-Hub-Signature"];
         let sans_prefix = signature_header[5..signature_header.len()].as_bytes();
 
         if self.authenticate(&req.body, sans_prefix) {
             match parse(req.body) {
                 Ok(results) => results,
-                Err(_) => Vec::with_capacity(0),
+                Err(e) => {
+                    eprintln!("{:?}", e);
+                    Vec::with_capacity(0)
+                }
             }
         } else {
             Vec::with_capacity(0)
@@ -175,7 +198,7 @@ impl InterpretWebhooks for Github {
                             VcsEvent::Merge {
                                 to_branch: pr_data.pull_request.base.git_ref.clone(),
                                 from_branch: pr_data.pull_request.head.git_ref.clone(),
-                                sha: pr_data.pull_request.head.sha.clone(),
+                                sha: pr_data.pull_request.base.sha.clone(),
                             },
                         ]
                     } else {

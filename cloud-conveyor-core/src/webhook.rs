@@ -43,7 +43,7 @@ pub struct WebhookRequest {
 
 /// Defines a standard form of event from the version controls system that occurs against the remote repository.
 /// This enum is certainly not a
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum VcsEvent {
     /// Indicates when one branch is merged into another.
     Merge {
