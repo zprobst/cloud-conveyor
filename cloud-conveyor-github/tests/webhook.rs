@@ -100,13 +100,3 @@ fn released() {
         }],
     )
 }
-
-#[test]
-fn invalid_sig() {
-    unimplemented!();
-}
-
-#[test]
-fn valid_sig() {
-    unimplemented!();
-}

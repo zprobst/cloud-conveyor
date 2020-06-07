@@ -216,3 +216,22 @@ impl InterpretWebhooks for Github {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    #[test]
+    fn invalid_sig() {
+        let invalid = "e9bec4a37923d7396bb9c56c1f8eca8b52f49a6c";
+        let subject = Github::authenticated("hello".to_owned());
+        assert_eq!(false, subject.authenticate("123456789", "".as_bytes()))
+    }
+
+    #[test]
+    fn valid_sig() {
+        let expected = "c6a94f25b8ace8f1c65c9bb6937d32973a4ceb9e";
+        let subject = Github::authenticated("hello".to_owned());
+        assert_eq!(true, subject.authenticate("123456789", expected.as_bytes()))
+    }
+}

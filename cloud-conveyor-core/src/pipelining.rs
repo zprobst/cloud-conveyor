@@ -115,7 +115,7 @@ struct Notify;
 ///  let approve = Approval {
 ///      approval_group: ApprovalGroup { people: vec![] },
 ///      stage_name: "prod".to_string(),
-///      sha: "cda888fd29a23fdb2d905e4ab6cf50230ce4c37b".to_string(),
+///      git_ref: "cda888fd29a23fdb2d905e4ab6cf50230ce4c37b".to_string(),
 ///      app_name: "cloud_conveyor".to_string()
 ///  };
 ///
