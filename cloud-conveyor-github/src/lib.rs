@@ -220,12 +220,11 @@ impl InterpretWebhooks for Github {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
     #[test]
     fn invalid_sig() {
         let invalid = "e9bec4a37923d7396bb9c56c1f8eca8b52f49a6c";
         let subject = Github::authenticated("hello".to_owned());
-        assert_eq!(false, subject.authenticate("123456789", "".as_bytes()))
+        assert_eq!(false, subject.authenticate("123456789", invalid.as_bytes()))
     }
 
     #[test]
