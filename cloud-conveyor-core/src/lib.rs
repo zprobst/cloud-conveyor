@@ -9,7 +9,6 @@
 
 #[macro_use]
 extern crate failure;
-
 use serde::{Deserialize, Serialize};
 
 pub mod build;
@@ -17,6 +16,7 @@ pub mod chat;
 pub mod deploy;
 pub mod pipelining;
 pub mod runtime;
+pub mod state_machine;
 pub mod teardown;
 pub mod webhook;
 pub mod yaml;
@@ -31,13 +31,10 @@ pub mod yaml;
 /// Defines an group of approvers that use a single service.
 /// Currently, on the slack type is supported.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-pub enum ApprovalGroup {
-    /// The Slack approval pattern. When approval is needed, each of the people in the people
-    /// vector should get a message that allows them to approve or deny a deployment.
-    Slack {
-        /// The slack handles "@zprobst" for the people who can approve with this group.
-        people: Vec<String>,
-    },
+pub struct ApprovalGroup {
+    /// The identifiers of the people who can approve or reject
+    /// the stage deployment.
+    pub people: Vec<String>,
 }
 
 /// An account with a cloud provider with a cloud provider and the types to bind information'

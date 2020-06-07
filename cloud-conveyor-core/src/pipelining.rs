@@ -1,17 +1,16 @@
 //! Defines the high order types for saving regarding the state of a pipeline. While this
 //! code does not produce a pipeline (that exists in places like webhook), it does provide
 //! patterns for interacting with and operating on a pipeline.
-
-// TODO: We are probably going to need to serialize the pipeline.
-// Probably this is the solution: https://stackoverflow.com/questions/50021897
-
 use crate::build::BuildStatus;
 use crate::deploy::DeployStatus;
 use crate::runtime::RuntimeContext;
 use crate::teardown::TeardownStatus;
 use crate::{ApprovalGroup, Stage};
+
 use failure::Error;
+use log::{info, warn};
 use serde::{Deserialize, Serialize};
+
 use std::any::Any;
 use std::fmt::Debug;
 
@@ -55,6 +54,7 @@ pub enum ActionResult {
 /// When there is a currently operating action, we need to determine if that thing is done. If it is
 /// not, we will wait more. If it is, we can fetch the result through the [get_result](#tymethod.get_result)
 /// function; the third and final method on the struct.
+#[typetag::serde(tag = "type")]
 pub trait Perform: BoxableEq + Debug {
     /// Does the work required to start the job in some sort of external context.
     fn start(&mut self, ctx: &RuntimeContext) -> Result<(), Error>;
@@ -113,7 +113,7 @@ struct Notify;
 ///  use cloud_conveyor_core::pipelining::{Pipeline, Approval};
 /// use cloud_conveyor_core::ApprovalGroup;
 ///  let approve = Approval {
-///      approval_group: ApprovalGroup::Slack{ people: vec![] },
+///      approval_group: ApprovalGroup { people: vec![] },
 ///      stage_name: "prod".to_string(),
 ///      sha: "cda888fd29a23fdb2d905e4ab6cf50230ce4c37b".to_string(),
 ///      app_name: "cloud_conveyor".to_string()
@@ -136,6 +136,7 @@ pub struct Approval {
     pub app_name: String,
 }
 
+#[typetag::serde]
 impl Perform for Approval {
     fn start(&mut self, _: &RuntimeContext) -> std::result::Result<(), Error> {
         todo!()
@@ -192,23 +193,54 @@ impl Build {
     }
 }
 
+#[typetag::serde]
 impl Perform for Build {
     fn start(&mut self, ctx: &RuntimeContext) -> Result<(), Error> {
+        info!(
+            "Starting build: sha {:?} for repo {:?} ",
+            self.sha, self.repo
+        );
         ctx.builder.start_build(&*self, ctx).map_err(|e| e.into())
     }
     fn is_done(&mut self, ctx: &RuntimeContext) -> Result<bool, Error> {
+        info!(
+            "Polling the state of the build: sha {:?} for repo {:?} ",
+            self.sha, self.repo
+        );
         match ctx.builder.check_build(&*self, ctx) {
             Ok(status) => match status {
-                BuildStatus::Pending => Ok(false),
-                _ => Ok(true),
+                BuildStatus::Pending => {
+                    info!("Build still pending for sha {:?}", self.sha);
+                    Ok(false)
+                }
+                _ => {
+                    info!("Build completed for sha {:?}", self.sha);
+                    Ok(true)
+                }
             },
             Err(reason) => Err(reason.into()),
         }
     }
     fn get_result(&self, _: &RuntimeContext) -> ActionResult {
+        info!(
+            "Getting the result of build: sha {:?} for repo {:?} ",
+            self.sha, self.repo
+        );
         match self.result.as_ref().unwrap() {
-            BuildStatus::Succeeded { logs: _ } => ActionResult::Success,
-            _ => ActionResult::Failed,
+            BuildStatus::Succeeded { .. } => {
+                info!(
+                    "Build completed successfully: sha {:?} for repo {:?} ",
+                    self.sha, self.repo
+                );
+                ActionResult::Success
+            }
+            _ => {
+                warn!(
+                    "Build completed with failures: sha {:?} for repo {:?} ",
+                    self.sha, self.repo
+                );
+                ActionResult::Failed
+            }
         }
     }
 }
@@ -295,25 +327,59 @@ impl Deploy {
     }
 }
 
+#[typetag::serde]
 impl Perform for Deploy {
     fn start(&mut self, ctx: &RuntimeContext) -> Result<(), Error> {
+        info!(
+            "Starting Deploy for sha: sha {:?} for repo {:?} to stage {:?}",
+            self.sha, self.repo, self.stage
+        );
         ctx.infrastructure
             .start_deployment(&*self, ctx)
             .map_err(|e| e.into())
     }
     fn is_done(&mut self, ctx: &RuntimeContext) -> Result<bool, Error> {
+        info!(
+            "Polling the state of the for sha: sha {:?} for repo {:?} to stage {:?}",
+            self.sha, self.repo, self.stage
+        );
         match ctx.infrastructure.check_deployment(&*self, ctx) {
             Ok(status) => match status {
-                DeployStatus::Pending => Ok(false),
-                _ => Ok(true),
+                DeployStatus::Pending => {
+                    info!(
+                        "Deploy still pending for sha: sha {:?} for repo {:?} to stage {:?}",
+                        self.sha, self.repo, self.stage
+                    );
+                    Ok(false)
+                }
+                _ => {
+                    info!("Build completed for sha {:?}", self.sha);
+                    Ok(true)
+                }
             },
             Err(reason) => Err(reason.into()),
         }
     }
     fn get_result(&self, _: &RuntimeContext) -> ActionResult {
+        info!(
+            "Getting the deploy result for sha: sha {:?} for repo {:?} to stage {:?}",
+            self.sha, self.repo, self.stage
+        );
         match self.result.as_ref().unwrap() {
-            DeployStatus::Complete => ActionResult::Success,
-            _ => ActionResult::Failed,
+            DeployStatus::Complete => {
+                info!(
+                    "Deploy completed successfully: sha {:?} for repo {:?} ",
+                    self.sha, self.repo
+                );
+                ActionResult::Success
+            }
+            _ => {
+                warn!(
+                    "Deploy completed with failures: sha {:?} for repo {:?} ",
+                    self.sha, self.repo
+                );
+                ActionResult::Failed
+            }
         }
     }
 }
@@ -373,32 +439,69 @@ impl Teardown {
     }
 }
 
+#[typetag::serde]
 impl Perform for Teardown {
     fn start(&mut self, ctx: &RuntimeContext) -> Result<(), Error> {
+        info!(
+            "Starting Teardown for repo {:?} on stage {:?}",
+            self.repo, self.stage
+        );
         ctx.teardown
             .start_teardown(&*self, ctx)
             .map_err(|e| e.into())
     }
     fn is_done(&mut self, ctx: &RuntimeContext) -> Result<bool, Error> {
+        info!(
+            "Polling the state of teardown for repo {:?} on stage {:?}",
+            self.repo, self.stage
+        );
         match ctx.teardown.check_teardown(&*self, ctx) {
             Ok(status) => match status {
-                TeardownStatus::Pending => Ok(false),
-                _ => Ok(true),
+                TeardownStatus::Pending => {
+                    info!(
+                        "Teardown still pending for  teardown for repo {:?} on stage {:?}",
+                        self.repo, self.stage
+                    );
+                    Ok(false)
+                }
+                _ => {
+                    info!(
+                        "Teardown completed for  teardown for repo {:?} on stage {:?}",
+                        self.repo, self.stage
+                    );
+                    Ok(true)
+                }
             },
             Err(reason) => Err(reason.into()),
         }
     }
     fn get_result(&self, _: &RuntimeContext) -> ActionResult {
+        info!(
+            "Getting the result for  teardown for repo {:?} on stage {:?}",
+            self.repo, self.stage
+        );
         match self.result.as_ref().unwrap() {
-            TeardownStatus::Complete => ActionResult::Success,
-            _ => ActionResult::Failed,
+            TeardownStatus::Complete => {
+                info!(
+                    "Teardown completed successfully:  repo {:?} stage {:?}",
+                    self.repo, self.stage
+                );
+                ActionResult::Success
+            }
+            _ => {
+                warn!(
+                    "Teardown completed with failures:  repo {:?} stage {:?}",
+                    self.repo, self.stage
+                );
+                ActionResult::Failed
+            }
         }
     }
 }
 
 /// A pipeline is a series of actions that need to be performed in order. It is like a queue, responsible
 /// for popping and pushing actions that implement the [Perform](trait.Perform.html) trait.
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Pipeline {
     pending_actions: Vec<Box<dyn Perform>>,
     completed_actions: Vec<Box<dyn Perform>>,
@@ -426,9 +529,8 @@ impl Pipeline {
 
     /// The action is needed to be immediately done. This means that the next thing that
     /// is popped off will be the action to specified.
-    pub fn add_immediate_action(mut self, action: Box<dyn Perform>) -> Self {
+    pub fn add_immediate_action(&mut self, action: Box<dyn Perform>) {
         self.pending_actions.insert(0, action);
-        self
     }
 
     /// Pops the next action off of the stack of actions to complete.

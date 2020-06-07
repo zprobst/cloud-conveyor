@@ -24,7 +24,7 @@ pub struct ApprovalDefinition {
 
 impl Into<ApprovalGroup> for ApprovalDefinition {
     fn into(self) -> ApprovalGroup {
-        ApprovalGroup::Slack {
+        ApprovalGroup {
             people: self.people,
         }
     }

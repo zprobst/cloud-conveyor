@@ -3,17 +3,18 @@ org: zprobst
 app: my-awesome-service
 
 accounts:
-  - name: default
+  default:
     id: 123456789
     regions:
       - us-east-1
       - us-west-1
-  - name: prod
+  prod:
     id: 123456789
     regions:
       - us-east-1
       - us-west-1
-  approvals:
+
+approvals:
   prod:
     type: slack
     people:
