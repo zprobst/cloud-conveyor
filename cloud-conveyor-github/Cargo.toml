@@ -6,3 +6,7 @@ edition = "2018"
 
 [dependencies]
 cloud-conveyor-core = { path = "../cloud-conveyor-core" }
+rust-crypto = "0.2"
+hex = "0.2"
+serde = "1"
+serde_json = "1"

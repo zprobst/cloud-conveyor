@@ -43,7 +43,7 @@ pub struct WebhookRequest {
 
 /// Defines a standard form of event from the version controls system that occurs against the remote repository.
 /// This enum is certainly not a
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum VcsEvent {
     /// Indicates when one branch is merged into another.
     Merge {
@@ -58,15 +58,13 @@ pub enum VcsEvent {
     TagPush {
         /// The tag name to push.
         tag: String,
-        /// The sha that is attached to command.
-        sha: String,
     },
     /// Indicates that a pull request was created.
     PullRequestCreate {
         /// The name of the branch that has the code to be merged.
         source_branch: String,
         /// The number of the pr being created.
-        pr_number: u32,
+        number: u32,
         /// The sha to deploy.
         sha: String,
     },
@@ -75,14 +73,14 @@ pub enum VcsEvent {
         /// The name of the branch that has the code to be merged.
         source_branch: String,
         /// The number of the pr being created.
-        pr_number: u32,
+        number: u32,
         /// The sha to deploy.
         sha: String,
     },
     /// Indicates that a pull request was completed.
     PullRequestComplete {
         /// The number of the pr being completed.
-        pr_number: u32,
+        number: u32,
         /// Wether or not the pr was merged to the branch it was intended for.
         merged: bool,
     },
@@ -90,9 +88,9 @@ pub enum VcsEvent {
 
 /// Defines a parsed event that came from a web request hook
 #[derive(Debug)]
-pub struct WebhookEvent<'application> {
+pub struct WebhookEvent {
     event: VcsEvent,
-    app: &'application mut Application,
+    app: Application,
     repo: String,
 }
 
@@ -117,38 +115,38 @@ pub trait InterpretWebhooks {
     /// If your parsing has errors, this likely means that, assuming the implementation is
     /// correct,  the data is invalid and by definition does not supply any kind of information
     /// to be processed. As such, errors should be handled and remapped as an empty vec.
-    fn parse_to_intermediary(&self, req: &WebhookRequest) -> Vec<Self::Intermediary>;
+    fn parse_to_intermediary(&self, req: WebhookRequest) -> Vec<Self::Intermediary>;
 
-    /// This will take the intermediary type and return an option of a vcs event. If the event
+    /// This will take the intermediary type and return some vcs envets. If the event
     /// described by the intermediary object does not relate to any one of the [VcsEvent](enum.VcsEvent.html)
-    /// types, then None can be returned. Items that return none are dropped from the pipeline.
-    fn get_vcs_event(&self, intermediary: &Self::Intermediary) -> Option<VcsEvent>;
+    /// types, then an empty vector can be returned. Items that return none are dropped from the pipeline.
+    fn get_vcs_event(&self, intermediary: &Self::Intermediary) -> Vec<VcsEvent>;
 
     /// Gets the repo of the event. This function, unlike the others in this trait cannot return an
     /// option because it does not make sense to have a repository event that does not have a
     /// repository. This function takes the intermediary type and return and returns a string
     /// with which defines the git url for the repo.
-    fn get_repo(&self, intermediary: &Self::Intermediary) -> &str;
+    fn get_repo<'a>(&self, intermediary: &'a Self::Intermediary) -> &'a str;
 
     /// The high order function that converts payloads from a webhook to a serialized and standard
     /// form for processing in the rest of the cloud conveyor pipelining code.
-    fn interpret_webhook_payload<'application>(
+    fn interpret_webhook_payload(
         &self,
-        req: &WebhookRequest,
-        runtime: &'application RuntimeContext,
-    ) -> Vec<WebhookEvent<'application>> {
+        req: WebhookRequest,
+        runtime: &RuntimeContext,
+    ) -> Vec<WebhookEvent> {
         let mut result = Vec::new();
 
         for inter in self.parse_to_intermediary(req) {
             let repo = self.get_repo(&inter);
             let maybe_app = runtime.load_application_from_repo(repo);
-            let maybe_vcs_event = self.get_vcs_event(&inter);
+            let vcs_events = self.get_vcs_event(&inter);
 
             if let Some(app) = maybe_app {
-                if let Some(event) = maybe_vcs_event {
+                for event in vcs_events {
                     result.push(WebhookEvent {
                         repo: repo.to_string(),
-                        app,
+                        app: app.clone(),
                         event,
                     });
                 }
@@ -161,14 +159,14 @@ pub trait InterpretWebhooks {
 
 fn add_build_and_deploy_stages(
     pipeline: Option<Pipeline>,
-    sha: &str,
+    git_ref: &str,
     deploy_stages: Vec<Stage>,
-    event: &mut WebhookEvent<'_>,
+    event: &mut WebhookEvent,
 ) -> Pipeline {
-    let build_action = Build::new(event.repo.clone(), sha.to_string());
+    let build_action = Build::new(event.repo.clone(), git_ref.to_string());
     info!(
         "Pushing build action for  for sha {:?} with action {:?} ",
-        sha, build_action
+        git_ref, build_action
     );
     let mut new_pipeline = pipeline
         .unwrap_or_default()
@@ -179,7 +177,7 @@ fn add_build_and_deploy_stages(
         if let Some(approval_group) = &stage.approval_group {
             let approval_action = Approval {
                 approval_group: approval_group.clone(),
-                sha: sha.to_string(),
+                git_ref: git_ref.to_string(),
                 app_name: event.app.full_name(),
                 stage_name: stage.name.clone(),
             };
@@ -190,7 +188,7 @@ fn add_build_and_deploy_stages(
             new_pipeline = new_pipeline.add_action(Box::new(approval_action));
         }
 
-        let deploy_action = Deploy::new(stage.clone(), event.repo.clone(), sha.to_string());
+        let deploy_action = Deploy::new(stage.clone(), event.repo.clone(), git_ref.to_string());
         info!(
             "Pushing deploy  action for stage {:?} with action {:?}",
             stage, deploy_action
@@ -203,12 +201,12 @@ fn add_build_and_deploy_stages(
 
 fn handle_tag_trigger(
     pipeline: Option<Pipeline>,
-    event: &mut WebhookEvent<'_>,
+    event: &mut WebhookEvent,
     pattern: String,
     stages: Vec<String>,
 ) -> Option<Pipeline> {
     match event.event.clone() {
-        VcsEvent::TagPush { tag, sha } => {
+        VcsEvent::TagPush { tag } => {
             let pattern = if pattern == "semver" {
                 SEMVER_REGEX
             } else {
@@ -229,7 +227,7 @@ fn handle_tag_trigger(
                 .cloned()
                 .collect();
 
-            add_build_and_deploy_stages(pipeline, &sha, deploy_stages, event).into()
+            add_build_and_deploy_stages(pipeline, &tag, deploy_stages, event).into()
         }
         _ => pipeline,
     }
@@ -237,7 +235,7 @@ fn handle_tag_trigger(
 
 fn handle_merge_trigger(
     pipeline: Option<Pipeline>,
-    event: &mut WebhookEvent<'_>,
+    event: &mut WebhookEvent,
     to_regex: String,
     from_regex: Option<String>,
     stages: Vec<String>,
@@ -293,20 +291,17 @@ fn handle_merge_trigger(
 fn handle_pr_trigger(
     pipeline: Option<Pipeline>,
     should_deploy: bool,
-    event: &mut WebhookEvent<'_>,
+    event: &mut WebhookEvent,
 ) -> Option<Pipeline> {
     match event.event.clone() {
         // When a pull request is created we need to create a build job. So we will create or
         // populate the pipeline with a build step.
-        VcsEvent::PullRequestCreate { pr_number, sha, .. } => {
-            info!(
-                "Creating PR {:?} with deploy {:?}",
-                pr_number, should_deploy
-            );
+        VcsEvent::PullRequestCreate { number, sha, .. } => {
+            info!("Creating PR {:?} with deploy {:?}", number, should_deploy);
 
             // If wes should deploy, we need a new stage to be created.
             let stages = if should_deploy {
-                let new_stage = Stage::from_pr_number(&event.app, pr_number);
+                let new_stage = Stage::from_pr_number(&event.app, number);
                 event.app.add_stage(new_stage.clone());
                 vec![new_stage]
             } else {
@@ -317,11 +312,11 @@ fn handle_pr_trigger(
         }
         // If the pull request is complete and there is a defined stage, then
         // we should add an undeploy job to the pipeline.
-        VcsEvent::PullRequestComplete { pr_number, .. } => {
-            info!("Completing PR {:?}", pr_number);
+        VcsEvent::PullRequestComplete { number, .. } => {
+            info!("Completing PR {:?}", number);
 
             // Scan for the stage in the application for the PR.
-            let stage = event.app.stages.iter().find(|s| s.is_for_pr(pr_number));
+            let stage = event.app.stages.iter().find(|s| s.is_for_pr(number));
 
             // If there is a stage, we need to "undeploy" it from the appropriate
             // account.  We do not need to do any kind of final builds.
@@ -336,10 +331,10 @@ fn handle_pr_trigger(
         }
         // If the pull request is updated and there is a defined stage, then
         // we should add an new build / deploy  job to the pipeline.
-        VcsEvent::PullRequestUpdate { pr_number, sha, .. } => {
+        VcsEvent::PullRequestUpdate { number, sha, .. } => {
             // Scan for the stage in the application for the PR.
-            info!("Updating PR {:?}", pr_number);
-            let stage = event.app.stages.iter().find(|s| s.is_for_pr(pr_number));
+            info!("Updating PR {:?}", number);
+            let stage = event.app.stages.iter().find(|s| s.is_for_pr(number));
 
             // Add the build and deploy stages to the pipeline.
             // Of there is a stage for the pr, then we can copy that and use that
@@ -359,7 +354,7 @@ fn handle_pr_trigger(
     }
 }
 
-fn event_to_pipeline(event: &mut WebhookEvent<'_>) -> Option<Pipeline> {
+fn event_to_pipeline(event: &mut WebhookEvent) -> Option<Pipeline> {
     let mut result = None;
 
     for trigger in event.app.triggers.clone() {
@@ -402,7 +397,7 @@ fn event_to_pipeline(event: &mut WebhookEvent<'_>) -> Option<Pipeline> {
 pub fn handle_web_hook_event<T: InterpretWebhooks>(
     interpreter: &T,
     runtime: &mut RuntimeContext,
-    request: &WebhookRequest,
+    request: WebhookRequest,
 ) -> Vec<Pipeline> {
     interpreter
         .interpret_webhook_payload(request, runtime)

@@ -115,7 +115,7 @@ struct Notify;
 ///  let approve = Approval {
 ///      approval_group: ApprovalGroup { people: vec![] },
 ///      stage_name: "prod".to_string(),
-///      sha: "cda888fd29a23fdb2d905e4ab6cf50230ce4c37b".to_string(),
+///      git_ref: "cda888fd29a23fdb2d905e4ab6cf50230ce4c37b".to_string(),
 ///      app_name: "cloud_conveyor".to_string()
 ///  };
 ///
@@ -130,8 +130,8 @@ pub struct Approval {
     pub approval_group: ApprovalGroup,
     /// The stage that is getting approved.
     pub stage_name: String,
-    /// The sha to be deployed.
-    pub sha: String,
+    /// The git ref to be deployed.
+    pub git_ref: String,
     /// app name that is being deployed.
     pub app_name: String,
 }
@@ -176,7 +176,7 @@ impl Perform for Approval {
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct Build {
     /// The ref to checkout.
-    pub sha: String,
+    pub git_ref: String,
     /// The repo to check the code out from.
     pub repo: String,
     result: Option<BuildStatus>,
@@ -184,9 +184,9 @@ pub struct Build {
 
 impl Build {
     /// Creates a new build job.
-    pub fn new(sha: String, repo: String) -> Self {
+    pub fn new(git_ref: String, repo: String) -> Self {
         Self {
-            sha,
+            git_ref,
             repo,
             result: None,
         }
@@ -197,24 +197,24 @@ impl Build {
 impl Perform for Build {
     fn start(&mut self, ctx: &RuntimeContext) -> Result<(), Error> {
         info!(
-            "Starting build: sha {:?} for repo {:?} ",
-            self.sha, self.repo
+            "Starting build: git_ref {:?} for repo {:?} ",
+            self.git_ref, self.repo
         );
         ctx.builder.start_build(&*self, ctx).map_err(|e| e.into())
     }
     fn is_done(&mut self, ctx: &RuntimeContext) -> Result<bool, Error> {
         info!(
-            "Polling the state of the build: sha {:?} for repo {:?} ",
-            self.sha, self.repo
+            "Polling the state of the build: git_ref {:?} for repo {:?} ",
+            self.git_ref, self.repo
         );
         match ctx.builder.check_build(&*self, ctx) {
             Ok(status) => match status {
                 BuildStatus::Pending => {
-                    info!("Build still pending for sha {:?}", self.sha);
+                    info!("Build still pending for git_ref {:?}", self.git_ref);
                     Ok(false)
                 }
                 _ => {
-                    info!("Build completed for sha {:?}", self.sha);
+                    info!("Build completed for git_ref {:?}", self.git_ref);
                     Ok(true)
                 }
             },
@@ -224,20 +224,20 @@ impl Perform for Build {
     fn get_result(&self, _: &RuntimeContext) -> ActionResult {
         info!(
             "Getting the result of build: sha {:?} for repo {:?} ",
-            self.sha, self.repo
+            self.git_ref, self.repo
         );
         match self.result.as_ref().unwrap() {
             BuildStatus::Succeeded { .. } => {
                 info!(
                     "Build completed successfully: sha {:?} for repo {:?} ",
-                    self.sha, self.repo
+                    self.git_ref, self.repo
                 );
                 ActionResult::Success
             }
             _ => {
                 warn!(
                     "Build completed with failures: sha {:?} for repo {:?} ",
-                    self.sha, self.repo
+                    self.git_ref, self.repo
                 );
                 ActionResult::Failed
             }
@@ -288,7 +288,7 @@ pub struct Deploy {
     /// belongs to with storing the application or a reference to it.
     pub repo: String,
     /// The sha of the code to deploy.
-    pub sha: String,
+    pub git_ref: String,
     /// The completed status of the deployment.
     result: Option<DeployStatus>,
 }
@@ -317,9 +317,9 @@ impl Deploy {
     ///  );
     ///
     /// ```
-    pub fn new(stage: Stage, repo: String, sha: String) -> Self {
+    pub fn new(stage: Stage, repo: String, git_ref: String) -> Self {
         Self {
-            sha,
+            git_ref,
             stage,
             repo,
             result: None,
@@ -332,7 +332,7 @@ impl Perform for Deploy {
     fn start(&mut self, ctx: &RuntimeContext) -> Result<(), Error> {
         info!(
             "Starting Deploy for sha: sha {:?} for repo {:?} to stage {:?}",
-            self.sha, self.repo, self.stage
+            self.git_ref, self.repo, self.stage
         );
         ctx.infrastructure
             .start_deployment(&*self, ctx)
@@ -340,20 +340,20 @@ impl Perform for Deploy {
     }
     fn is_done(&mut self, ctx: &RuntimeContext) -> Result<bool, Error> {
         info!(
-            "Polling the state of the for sha: sha {:?} for repo {:?} to stage {:?}",
-            self.sha, self.repo, self.stage
+            "Polling the state of the for ref: ref {:?} for repo {:?} to stage {:?}",
+            self.git_ref, self.repo, self.stage
         );
         match ctx.infrastructure.check_deployment(&*self, ctx) {
             Ok(status) => match status {
                 DeployStatus::Pending => {
                     info!(
-                        "Deploy still pending for sha: sha {:?} for repo {:?} to stage {:?}",
-                        self.sha, self.repo, self.stage
+                        "Deploy still pending for ref: ref {:?} for repo {:?} to stage {:?}",
+                        self.git_ref, self.repo, self.stage
                     );
                     Ok(false)
                 }
                 _ => {
-                    info!("Build completed for sha {:?}", self.sha);
+                    info!("Build completed for ref {:?}", self.git_ref);
                     Ok(true)
                 }
             },
@@ -362,21 +362,21 @@ impl Perform for Deploy {
     }
     fn get_result(&self, _: &RuntimeContext) -> ActionResult {
         info!(
-            "Getting the deploy result for sha: sha {:?} for repo {:?} to stage {:?}",
-            self.sha, self.repo, self.stage
+            "Getting the deploy result for git_ref: git_ref {:?} for repo {:?} to stage {:?}",
+            self.git_ref, self.repo, self.stage
         );
         match self.result.as_ref().unwrap() {
             DeployStatus::Complete => {
                 info!(
-                    "Deploy completed successfully: sha {:?} for repo {:?} ",
-                    self.sha, self.repo
+                    "Deploy completed successfully: git_ref {:?} for repo {:?} ",
+                    self.git_ref, self.repo
                 );
                 ActionResult::Success
             }
             _ => {
                 warn!(
-                    "Deploy completed with failures: sha {:?} for repo {:?} ",
-                    self.sha, self.repo
+                    "Deploy completed with failures: git_ref {:?} for repo {:?} ",
+                    self.git_ref, self.repo
                 );
                 ActionResult::Failed
             }
