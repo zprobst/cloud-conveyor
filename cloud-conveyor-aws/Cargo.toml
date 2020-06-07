@@ -1,0 +1,14 @@
+[package]
+name = "cloud-conveyor-aws"
+version = "0.1.0"
+authors = ["Zach Probst <zprobst@resilientvitality.com>"]
+edition = "2018"
+
+[dependencies]
+cloud-conveyor-core = { path = "../cloud-conveyor-core" }
+derivative = "2.1.1"
+failure = "0.1.8"
+rusoto_core = "0.44.0"
+rusoto_cloudformation = "0.44.0"
+rusoto_codebuild = "0.44.0"
+rusoto_s3 = "0.44.0"
