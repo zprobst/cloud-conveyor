@@ -1,6 +1,7 @@
 #[cfg(test)]
 use cloud_conveyor_core::pipelining::{Build, Pipeline};
 
+/*
 #[test]
 fn pipeline_allows_one_build() {
     let mut pipeline = Pipeline::default();
@@ -14,3 +15,4 @@ fn pipeline_allows_one_build() {
     assert!(pipeline.pop_next_action().is_some());
     assert!(pipeline.pop_next_action().is_none());
 }
+*/

@@ -158,7 +158,7 @@ pub trait InterpretWebhooks {
 }
 
 fn add_build_and_deploy_stages(
-    pipeline: Option<Pipeline>,
+    pipeline: Pipeline,
     git_ref: &str,
     deploy_stages: Vec<Stage>,
     event: &mut WebhookEvent,
@@ -168,9 +168,7 @@ fn add_build_and_deploy_stages(
         "Pushing build action for  for sha {:?} with action {:?} ",
         git_ref, build_action
     );
-    let mut new_pipeline = pipeline
-        .unwrap_or_default()
-        .add_action(Box::new(build_action));
+    let mut new_pipeline = pipeline.add_action(Box::new(build_action));
 
     // If the deployment should be done, we should do it. Add the step to the pipeline.
     for stage in deploy_stages {
@@ -200,11 +198,11 @@ fn add_build_and_deploy_stages(
 }
 
 fn handle_tag_trigger(
-    pipeline: Option<Pipeline>,
+    pipeline: Pipeline,
     event: &mut WebhookEvent,
     pattern: String,
     stages: Vec<String>,
-) -> Option<Pipeline> {
+) -> Pipeline {
     match event.event.clone() {
         VcsEvent::TagPush { tag } => {
             let pattern = if pattern == "semver" {
@@ -234,12 +232,12 @@ fn handle_tag_trigger(
 }
 
 fn handle_merge_trigger(
-    pipeline: Option<Pipeline>,
+    pipeline: Pipeline,
     event: &mut WebhookEvent,
     to_regex: String,
     from_regex: Option<String>,
     stages: Vec<String>,
-) -> Option<Pipeline> {
+) -> Pipeline {
     match event.event.clone() {
         VcsEvent::Merge {
             to_branch,
@@ -289,10 +287,10 @@ fn handle_merge_trigger(
 }
 
 fn handle_pr_trigger(
-    pipeline: Option<Pipeline>,
+    pipeline: Pipeline,
     should_deploy: bool,
     event: &mut WebhookEvent,
-) -> Option<Pipeline> {
+) -> Pipeline {
     match event.event.clone() {
         // When a pull request is created we need to create a build job. So we will create or
         // populate the pipeline with a build step.
@@ -308,7 +306,7 @@ fn handle_pr_trigger(
                 Vec::new()
             };
             let result = add_build_and_deploy_stages(pipeline, &sha, stages, event);
-            result.into()
+            result
         }
         // If the pull request is complete and there is a defined stage, then
         // we should add an undeploy job to the pipeline.
@@ -322,10 +320,7 @@ fn handle_pr_trigger(
             // account.  We do not need to do any kind of final builds.
             if let Some(stage) = stage {
                 let teardown = Teardown::new(stage.clone(), event.repo.clone());
-                return pipeline
-                    .unwrap_or_default()
-                    .add_action(Box::new(teardown))
-                    .into();
+                return pipeline.add_action(Box::new(teardown));
             }
             pipeline
         }
@@ -354,8 +349,8 @@ fn handle_pr_trigger(
     }
 }
 
-fn event_to_pipeline(event: &mut WebhookEvent) -> Option<Pipeline> {
-    let mut result = None;
+fn event_to_pipeline(event: &mut WebhookEvent) -> Pipeline {
+    let mut result = Pipeline::for_app(event.app.clone());
 
     for trigger in event.app.triggers.clone() {
         match trigger {
@@ -403,6 +398,6 @@ pub fn handle_web_hook_event<T: InterpretWebhooks>(
         .interpret_webhook_payload(request, runtime)
         .iter_mut()
         .map(event_to_pipeline)
-        .filter_map(|o| o)
+        .filter(|p| p.len_pending_actions() > 0)
         .collect()
 }

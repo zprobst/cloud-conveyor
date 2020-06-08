@@ -42,7 +42,7 @@ impl StateMachine {
             .current_action
             .as_mut()
             .expect("Action does not exist despite just checking its value");
-        let is_done = action.is_done(context).await?;
+        let is_done = action.is_done(context, &self.pipeline.app).await?;
 
         // If the current action is still going, we can just bail here.
         if !is_done {
@@ -80,7 +80,7 @@ impl StateMachine {
             let action = self.current_action.as_mut().unwrap();
             self.recommended_wait = START_WAIT_TIME;
             info!("Starting new action {:?}", action);
-            action.start(context).await?;
+            action.start(context, &self.pipeline.app).await?;
         }
         Ok(has_remaining_actions)
     }

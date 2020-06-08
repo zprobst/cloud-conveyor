@@ -75,7 +75,12 @@ pub trait BuildSource: Debug + Sync + Send {
     /// deployment later in the pipeline. As such, you are not given access to the stage(s) the code is being built for.
     ///
     /// If an error occurs when triggering the build, use the appropriate variant of  [BuildPollError](enum.BuildPollError.html)
-    async fn start_build(&self, build: &Build, ctx: &RuntimeContext) -> Result<(), BuildPollError>;
+    async fn start_build(
+        &self,
+        build: &Build,
+        ctx: &RuntimeContext,
+        app: &Application,
+    ) -> Result<(), BuildPollError>;
 
     /// Polls the state of the build given the build data passed.
     /// If that final result of the build is not known use [BuildStatus::Pending](enum.BuildStatus.html#variant.Pending).
@@ -89,6 +94,7 @@ pub trait BuildSource: Debug + Sync + Send {
         &self,
         build: &Build,
         ctx: &RuntimeContext,
+        app: &Application,
     ) -> Result<BuildStatus, BuildPollError>;
 }
 

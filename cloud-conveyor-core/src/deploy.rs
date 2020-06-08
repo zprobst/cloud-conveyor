@@ -1,6 +1,7 @@
 //! Defines the runtime abstraction for deploying infrastructure and reporting successes and failures when doing so.
 use crate::pipelining::Deploy;
 use crate::runtime::RuntimeContext;
+use crate::Application;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -67,6 +68,7 @@ pub trait DeployInfrastructure: Debug + Sync + Send {
         &self,
         deploy: &Deploy,
         ctx: &RuntimeContext,
+        app: &Application,
     ) -> Result<(), DeployPollError>;
 
     /// Polls the state of the deployment of the infrastructure given the deployment data passed.
@@ -81,5 +83,6 @@ pub trait DeployInfrastructure: Debug + Sync + Send {
         &self,
         deploy: &Deploy,
         ctx: &RuntimeContext,
+        app: &Application,
     ) -> Result<DeployStatus, DeployPollError>;
 }

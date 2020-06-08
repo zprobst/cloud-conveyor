@@ -19,10 +19,10 @@ use cloud_conveyor_core::{
 use async_trait::async_trait;
 use failure::Error;
 use rusoto_cloudformation::{CloudFormation, CloudFormationClient};
-use rusoto_codebuild::{CodeBuild, CodeBuildClient};
-use rusoto_core::Region;
+//use rusoto_codebuild::{CodeBuild, CodeBuildClient};
+use rusoto_core::{request::HttpClient, Region};
 use rusoto_credential::ProvideAwsCredentials;
-use rusoto_sts::{Sts, StsClient};
+use rusoto_sts::{StsAssumeRoleSessionCredentialsProvider, StsClient};
 
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -33,6 +33,8 @@ use std::fmt::Debug;
 /// ```rust
 /// use cloud_conveyor_aws::Aws;
 /// use rusoto_credential::EnvironmentProvider;
+/// use rusoto_core::Region;
+///
 /// let aws = Aws::build()
 ///     .bucket("my-bucket-name".to_owned())
 ///     .add_account_role(
@@ -47,27 +49,36 @@ use std::fmt::Debug;
 ///         210987654321,
 ///         "arn:aws:iam::210987654321:role/CloudConveyor".to_owned(),
 ///     )
+///     .region(Region::UsEast1)
 ///     .credentials(EnvironmentProvider::default())
 ///     .finish();
 /// ```
 #[derive(Debug)]
 pub struct AwsBuilder<P>
 where
-    P: ProvideAwsCredentials + Send + Sync + Debug,
+    P: ProvideAwsCredentials + Clone + Send + Sync + Debug + 'static,
 {
     bucket: Option<String>,
     account_role_map: Option<HashMap<usize, String>>,
     external_id_map: Option<HashMap<usize, String>>,
     credentials: Option<P>,
+    region: Option<Region>,
 }
 
 impl<P> AwsBuilder<P>
 where
-    P: ProvideAwsCredentials + Send + Sync + Debug,
+    P: ProvideAwsCredentials + Clone + Send + Sync + Debug + 'static,
 {
     /// Sets the name of the bucket that is expected in which the assets should be stored.
     pub fn bucket(mut self, bucket: String) -> Self {
         self.bucket = Some(bucket);
+        self
+    }
+
+    /// Sets the name of the region that is expected in which sts
+    /// assumption should be set.
+    pub fn region(mut self, region: Region) -> Self {
+        self.region = Some(region);
         self
     }
 
@@ -115,6 +126,7 @@ where
             credentials: self
                 .credentials
                 .expect("Did not set a credential provider during the build."),
+            region: self.region.expect("Did not set a region to operate on"),
         }
     }
 }
@@ -180,9 +192,10 @@ where
 #[derive(Debug)]
 pub struct Aws<P>
 where
-    P: ProvideAwsCredentials + Send + Sync,
+    P: ProvideAwsCredentials + Clone + Send + Sync + Debug + 'static,
 {
     bucket_name: String,
+    region: Region,
     account_role_map: HashMap<usize, String>,
     external_id_map: HashMap<usize, String>,
     credentials: P,
@@ -190,7 +203,7 @@ where
 
 impl<P> Aws<P>
 where
-    P: ProvideAwsCredentials + Send + Sync + Debug,
+    P: ProvideAwsCredentials + Clone + Send + Sync + Debug + 'static,
 {
     /// Begins the build process of the `Aws` struct. Several things are required when
     /// building an environment.  Here is an example of building an complex multi-account
@@ -199,6 +212,8 @@ where
     /// ```rust
     /// use cloud_conveyor_aws::Aws;
     /// use rusoto_credential::EnvironmentProvider;
+    /// use rusoto_core::Region;
+    ///
     /// let aws = Aws::build()
     ///     .bucket("my-bucket-name".to_owned())
     ///     .add_account_role(
@@ -213,6 +228,7 @@ where
     ///         210987654321,
     ///         "arn:aws:iam::210987654321:role/CloudConveyor".to_owned(),
     ///     )
+    ///     .region(Region::UsEast1)
     ///     .credentials(EnvironmentProvider::default())
     ///     .finish();
     /// ```
@@ -225,6 +241,32 @@ where
             account_role_map: None,
             external_id_map: None,
             credentials: None,
+            region: None,
+        }
+    }
+
+    #[allow(dead_code)]
+    async fn find_credentials(
+        &self,
+        account_no: &usize,
+    ) -> Result<Option<StsAssumeRoleSessionCredentialsProvider>, Error> {
+        if let Some(role) = self.account_role_map.get(account_no) {
+            let external_id = self.account_role_map.get(account_no).cloned();
+            Ok(Some(StsAssumeRoleSessionCredentialsProvider::new(
+                StsClient::new_with(
+                    HttpClient::new()?,
+                    self.credentials.clone(),
+                    self.region.clone(),
+                ),
+                role.clone(),
+                format!("acc-{}", account_no),
+                external_id,
+                None,
+                None,
+                None,
+            )))
+        } else {
+            Ok(None)
         }
     }
 }
@@ -232,19 +274,21 @@ where
 #[async_trait]
 impl<P> TeardownInfrastructure for Aws<P>
 where
-    P: ProvideAwsCredentials + Send + Sync + Debug,
+    P: ProvideAwsCredentials + Clone + Send + Sync + Debug + 'static,
 {
     async fn start_teardown(
         &self,
-        job: &Teardown,
-        ctx: &RuntimeContext,
+        _: &Teardown,
+        _: &RuntimeContext,
+        app: &Application,
     ) -> Result<(), TeardownPollError> {
-        todo!()
+        Ok(())
     }
     async fn check_teardown(
         &self,
         _: &Teardown,
         _: &RuntimeContext,
+        app: &Application,
     ) -> Result<TeardownStatus, TeardownPollError> {
         todo!()
     }
@@ -253,19 +297,21 @@ where
 #[async_trait]
 impl<P> DeployInfrastructure for Aws<P>
 where
-    P: ProvideAwsCredentials + Send + Sync + Debug,
+    P: ProvideAwsCredentials + Clone + Send + Sync + Debug + 'static,
 {
     async fn start_deployment(
         &self,
         _: &Deploy,
         _: &RuntimeContext,
+        app: &Application,
     ) -> Result<(), DeployPollError> {
-        todo!()
+        Ok(())
     }
     async fn check_deployment(
         &self,
         _: &Deploy,
         _: &RuntimeContext,
+        app: &Application,
     ) -> Result<DeployStatus, DeployPollError> {
         todo!()
     }
@@ -274,15 +320,21 @@ where
 #[async_trait]
 impl<P> BuildSource for Aws<P>
 where
-    P: ProvideAwsCredentials + Send + Sync + Debug,
+    P: ProvideAwsCredentials + Clone + Send + Sync + Debug + 'static,
 {
-    async fn start_build(&self, _: &Build, _: &RuntimeContext) -> Result<(), BuildPollError> {
+    async fn start_build(
+        &self,
+        _: &Build,
+        _: &RuntimeContext,
+        app: &Application,
+    ) -> Result<(), BuildPollError> {
         todo!()
     }
     async fn check_build(
         &self,
         _: &Build,
         _: &RuntimeContext,
+        app: &Application,
     ) -> Result<BuildStatus, BuildPollError> {
         todo!()
     }
@@ -295,7 +347,7 @@ where
 #[async_trait]
 impl<P> ProvideArtifactLocation for Aws<P>
 where
-    P: ProvideAwsCredentials + Send + Sync + Debug,
+    P: ProvideAwsCredentials + Clone + Send + Sync + Debug + 'static,
 {
     async fn get_bucket(&self, _: &Application) -> Result<String, Error> {
         Ok(self.bucket_name.clone())

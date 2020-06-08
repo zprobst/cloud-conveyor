@@ -5,7 +5,7 @@ use crate::build::BuildStatus;
 use crate::deploy::DeployStatus;
 use crate::runtime::RuntimeContext;
 use crate::teardown::TeardownStatus;
-use crate::{ApprovalGroup, Stage};
+use crate::{Application, ApprovalGroup, Stage};
 
 use async_trait::async_trait;
 use failure::Error;
@@ -59,11 +59,11 @@ pub enum ActionResult {
 #[async_trait]
 pub trait Perform: BoxableEq + Debug {
     /// Does the work required to start the job in some sort of external context.
-    async fn start(&mut self, ctx: &RuntimeContext) -> Result<(), Error>;
+    async fn start(&mut self, ctx: &RuntimeContext, app: &Application) -> Result<(), Error>;
 
     /// Does the work required to see if the job, in the external context, is done (regardless of success or fail).
     /// If it is done, Ok(true) should be returned. If not Ok(false).
-    async fn is_done(&mut self, ctx: &RuntimeContext) -> Result<bool, Error>;
+    async fn is_done(&mut self, ctx: &RuntimeContext, app: &Application) -> Result<bool, Error>;
 
     /// Gets the final state of the job and returns a [ActionResult](enum.ActionResult.html). For information regarding
     /// when to return what version of [ActionResult](enum.ActionResult.html), see the docs on [ActionResult](enum.ActionResult.html).
@@ -141,10 +141,18 @@ pub struct Approval {
 #[async_trait]
 #[typetag::serde]
 impl Perform for Approval {
-    async fn start(&mut self, _: &RuntimeContext) -> std::result::Result<(), Error> {
+    async fn start(
+        &mut self,
+        _: &RuntimeContext,
+        app: &Application,
+    ) -> std::result::Result<(), Error> {
         todo!()
     }
-    async fn is_done(&mut self, _: &RuntimeContext) -> std::result::Result<bool, Error> {
+    async fn is_done(
+        &mut self,
+        _: &RuntimeContext,
+        app: &Application,
+    ) -> std::result::Result<bool, Error> {
         todo!()
     }
     fn get_result(&self, _: &RuntimeContext) -> ActionResult {
@@ -199,22 +207,22 @@ impl Build {
 #[async_trait]
 #[typetag::serde]
 impl Perform for Build {
-    async fn start(&mut self, ctx: &RuntimeContext) -> Result<(), Error> {
+    async fn start(&mut self, ctx: &RuntimeContext, app: &Application) -> Result<(), Error> {
         info!(
             "Starting build: git_ref {:?} for repo {:?} ",
             self.git_ref, self.repo
         );
         ctx.builder
-            .start_build(&*self, ctx)
+            .start_build(&*self, ctx, app)
             .await
             .map_err(|e| e.into())
     }
-    async fn is_done(&mut self, ctx: &RuntimeContext) -> Result<bool, Error> {
+    async fn is_done(&mut self, ctx: &RuntimeContext, app: &Application) -> Result<bool, Error> {
         info!(
             "Polling the state of the build: git_ref {:?} for repo {:?} ",
             self.git_ref, self.repo
         );
-        match ctx.builder.check_build(&*self, ctx).await {
+        match ctx.builder.check_build(&*self, ctx, app).await {
             Ok(status) => match status {
                 BuildStatus::Pending => {
                     info!("Build still pending for git_ref {:?}", self.git_ref);
@@ -337,22 +345,22 @@ impl Deploy {
 #[async_trait]
 #[typetag::serde]
 impl Perform for Deploy {
-    async fn start(&mut self, ctx: &RuntimeContext) -> Result<(), Error> {
+    async fn start(&mut self, ctx: &RuntimeContext, app: &Application) -> Result<(), Error> {
         info!(
             "Starting Deploy for sha: sha {:?} for repo {:?} to stage {:?}",
             self.git_ref, self.repo, self.stage
         );
         ctx.infrastructure
-            .start_deployment(&*self, ctx)
+            .start_deployment(&*self, ctx, app)
             .await
             .map_err(|e| e.into())
     }
-    async fn is_done(&mut self, ctx: &RuntimeContext) -> Result<bool, Error> {
+    async fn is_done(&mut self, ctx: &RuntimeContext, app: &Application) -> Result<bool, Error> {
         info!(
             "Polling the state of the for ref: ref {:?} for repo {:?} to stage {:?}",
             self.git_ref, self.repo, self.stage
         );
-        match ctx.infrastructure.check_deployment(&*self, ctx).await {
+        match ctx.infrastructure.check_deployment(&*self, ctx, app).await {
             Ok(status) => match status {
                 DeployStatus::Pending => {
                     info!(
@@ -451,22 +459,22 @@ impl Teardown {
 #[async_trait]
 #[typetag::serde]
 impl Perform for Teardown {
-    async fn start(&mut self, ctx: &RuntimeContext) -> Result<(), Error> {
+    async fn start(&mut self, ctx: &RuntimeContext, app: &Application) -> Result<(), Error> {
         info!(
             "Starting Teardown for repo {:?} on stage {:?}",
             self.repo, self.stage
         );
         ctx.teardown
-            .start_teardown(&*self, ctx)
+            .start_teardown(&*self, ctx, app)
             .await
             .map_err(|e| e.into())
     }
-    async fn is_done(&mut self, ctx: &RuntimeContext) -> Result<bool, Error> {
+    async fn is_done(&mut self, ctx: &RuntimeContext, app: &Application) -> Result<bool, Error> {
         info!(
             "Polling the state of teardown for repo {:?} on stage {:?}",
             self.repo, self.stage
         );
-        match ctx.teardown.check_teardown(&*self, ctx).await {
+        match ctx.teardown.check_teardown(&*self, ctx, app).await {
             Ok(status) => match status {
                 TeardownStatus::Pending => {
                     info!(
@@ -514,6 +522,7 @@ impl Perform for Teardown {
 /// for popping and pushing actions that implement the [Perform](trait.Perform.html) trait.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Pipeline {
+    pub app: Application,
     pending_actions: Vec<Box<dyn Perform>>,
     completed_actions: Vec<Box<dyn Perform>>,
     action_results: Vec<ActionResult>,
@@ -522,8 +531,9 @@ pub struct Pipeline {
 impl Pipeline {
     /// Generates a blank pipeline to build on. This pipeline has no
     /// pending or completed actions.
-    pub fn empty() -> Self {
+    pub fn for_app(app: Application) -> Self {
         Self {
+            app,
             pending_actions: Vec::new(),
             completed_actions: Vec::new(),
             action_results: Vec::new(),
@@ -562,10 +572,9 @@ impl Pipeline {
             self.complete_action(action, ActionResult::Canceled);
         }
     }
-}
 
-impl Default for Pipeline {
-    fn default() -> Self {
-        Self::empty()
+    /// Gets the count of pending actions
+    pub fn len_pending_actions(&self) -> usize {
+        self.pending_actions.len()
     }
 }

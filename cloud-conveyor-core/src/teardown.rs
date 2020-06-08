@@ -1,6 +1,7 @@
 //! Defines the runtime abstraction for tearing down infrastructure and reporting successes and failures when doing so.
 use crate::pipelining::Teardown;
 use crate::runtime::RuntimeContext;
+use crate::Application;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -70,6 +71,7 @@ pub trait TeardownInfrastructure: Debug + Sync + Send {
         &self,
         deploy: &Teardown,
         ctx: &RuntimeContext,
+        app: &Application,
     ) -> Result<(), TeardownPollError>;
 
     /// Polls the state of the teardown of the infrastructure given the data passed.
@@ -84,5 +86,6 @@ pub trait TeardownInfrastructure: Debug + Sync + Send {
         &self,
         deploy: &Teardown,
         ctx: &RuntimeContext,
+        app: &Application,
     ) -> Result<TeardownStatus, TeardownPollError>;
 }
