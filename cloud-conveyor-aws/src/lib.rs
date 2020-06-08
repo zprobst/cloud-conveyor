@@ -13,12 +13,12 @@ use cloud_conveyor_core::{
     pipelining::{Build, Deploy, Teardown},
     runtime::RuntimeContext,
     teardown::{TeardownInfrastructure, TeardownPollError, TeardownStatus},
-    Application,
+    Application, Stage,
 };
 
 use async_trait::async_trait;
 use failure::Error;
-use rusoto_cloudformation::{CloudFormation, CloudFormationClient};
+use rusoto_cloudformation::{CloudFormation, CloudFormationClient, DeleteStackInput};
 //use rusoto_codebuild::{CodeBuild, CodeBuildClient};
 use rusoto_core::{request::HttpClient, Region};
 use rusoto_credential::ProvideAwsCredentials;
@@ -26,6 +26,7 @@ use rusoto_sts::{StsAssumeRoleSessionCredentialsProvider, StsClient};
 
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::str::FromStr;
 
 /// Builds a copy of the `Aws` Struct such that the it can potentially assume multiple roles
 /// to different accounts. Here is an example usage.todo!
@@ -245,8 +246,11 @@ where
         }
     }
 
-    #[allow(dead_code)]
-    async fn find_credentials(
+    fn stack_name(&self, app: &Application, stage: &Stage) -> String {
+        format!("{}-{}-{}", app.org, app.app, stage.name)
+    }
+
+    fn find_credentials(
         &self,
         account_no: &usize,
     ) -> Result<Option<StsAssumeRoleSessionCredentialsProvider>, Error> {
@@ -278,17 +282,39 @@ where
 {
     async fn start_teardown(
         &self,
-        _: &Teardown,
+        job: &Teardown,
         _: &RuntimeContext,
         app: &Application,
     ) -> Result<(), TeardownPollError> {
+        // Now iterate over each account and start the teardown for the
+        // expected stack in that region.
+        let stack_name = self.stack_name(app, &job.stage);
+        for region in job.stage.account.regions.iter() {
+            let creds = self
+                .find_credentials(&job.stage.account.id)
+                .map_err(|_| TeardownPollError::Credentials)?
+                .ok_or_else(|| TeardownPollError::Credentials)?;
+            let aws_region =
+                Region::from_str(region).map_err(|_| TeardownPollError::InvalidRegion)?;
+            let http_client = HttpClient::new().map_err(|_| TeardownPollError::Other {
+                info: "Http Client Failed to Create".to_owned(),
+            })?;
+            CloudFormationClient::new_with(http_client, creds, aws_region)
+                .delete_stack(DeleteStackInput {
+                    stack_name: stack_name.clone(),
+                    ..Default::default()
+                })
+                .await
+                .map_err(|_| TeardownPollError::CannotDelete)?;
+        }
+
         Ok(())
     }
     async fn check_teardown(
         &self,
         _: &Teardown,
         _: &RuntimeContext,
-        app: &Application,
+        _: &Application,
     ) -> Result<TeardownStatus, TeardownPollError> {
         todo!()
     }
@@ -303,15 +329,15 @@ where
         &self,
         _: &Deploy,
         _: &RuntimeContext,
-        app: &Application,
+        _: &Application,
     ) -> Result<(), DeployPollError> {
-        Ok(())
+        todo!()
     }
     async fn check_deployment(
         &self,
         _: &Deploy,
         _: &RuntimeContext,
-        app: &Application,
+        _: &Application,
     ) -> Result<DeployStatus, DeployPollError> {
         todo!()
     }
@@ -326,7 +352,7 @@ where
         &self,
         _: &Build,
         _: &RuntimeContext,
-        app: &Application,
+        _: &Application,
     ) -> Result<(), BuildPollError> {
         todo!()
     }
@@ -334,7 +360,7 @@ where
         &self,
         _: &Build,
         _: &RuntimeContext,
-        app: &Application,
+        _: &Application,
     ) -> Result<BuildStatus, BuildPollError> {
         todo!()
     }

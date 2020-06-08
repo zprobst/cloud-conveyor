@@ -22,6 +22,10 @@ pub enum TeardownPollError {
     #[fail(display = "When a stack cannot be deleted entirely and should be.")]
     CannotDelete,
 
+    /// When a region is invalid, this can be used to indicate that.
+    #[fail(display = "The region string specified is not valid")]
+    InvalidRegion,
+
     /// When the cause does not fit any of the known patterns defined else where in the enum,
     /// this can be returned. It takes an additional string and passed that information as part
     /// of the error  context.

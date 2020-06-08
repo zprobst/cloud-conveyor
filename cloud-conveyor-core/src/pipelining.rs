@@ -522,6 +522,7 @@ impl Perform for Teardown {
 /// for popping and pushing actions that implement the [Perform](trait.Perform.html) trait.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Pipeline {
+    /// The application the pipeline relates to.
     pub app: Application,
     pending_actions: Vec<Box<dyn Perform>>,
     completed_actions: Vec<Box<dyn Perform>>,
