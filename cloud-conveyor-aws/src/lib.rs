@@ -1,5 +1,4 @@
 //! Defines the implementations of building and deploying on AWS for cloud conveyor.
-
 #![warn(
     missing_docs,
     rust_2018_idioms,
@@ -18,7 +17,10 @@ use cloud_conveyor_core::{
 
 use async_trait::async_trait;
 use failure::Error;
-use rusoto_cloudformation::{CloudFormation, CloudFormationClient, DeleteStackInput};
+use rusoto_cloudformation::{
+    CloudFormation, CloudFormationClient, DeleteStackInstancesInput, DeleteStackSetInput,
+    ListStackInstancesInput,
+};
 //use rusoto_codebuild::{CodeBuild, CodeBuildClient};
 use rusoto_core::{request::HttpClient, Region};
 use rusoto_credential::ProvideAwsCredentials;
@@ -26,7 +28,9 @@ use rusoto_sts::{StsAssumeRoleSessionCredentialsProvider, StsClient};
 
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::str::FromStr;
+
+// TODO: For now, we are always swallowing if there is more that one error and only returning
+// the first one, maybe we should change the error API to return a list of errors.
 
 /// Builds a copy of the `Aws` Struct such that the it can potentially assume multiple roles
 /// to different accounts. Here is an example usage.todo!
@@ -273,6 +277,21 @@ where
             Ok(None)
         }
     }
+
+    fn cfn_client(&self, account_no: &usize) -> Result<CloudFormationClient, Error> {
+        let http_client = HttpClient::new().map_err(|_| TeardownPollError::Other {
+            info: "Http Client Failed to Create".to_owned(),
+        })?;
+        let credentials = self
+            .find_credentials(account_no)
+            .map_err(|_| TeardownPollError::Credentials)?
+            .ok_or_else(|| TeardownPollError::Credentials)?;
+        Ok(CloudFormationClient::new_with(
+            http_client,
+            credentials,
+            self.region.clone(),
+        ))
+    }
 }
 
 #[async_trait]
@@ -286,37 +305,76 @@ where
         _: &RuntimeContext,
         app: &Application,
     ) -> Result<(), TeardownPollError> {
-        // Now iterate over each account and start the teardown for the
-        // expected stack in that region.
-        let stack_name = self.stack_name(app, &job.stage);
-        for region in job.stage.account.regions.iter() {
-            let creds = self
-                .find_credentials(&job.stage.account.id)
-                .map_err(|_| TeardownPollError::Credentials)?
-                .ok_or_else(|| TeardownPollError::Credentials)?;
-            let aws_region =
-                Region::from_str(region).map_err(|_| TeardownPollError::InvalidRegion)?;
-            let http_client = HttpClient::new().map_err(|_| TeardownPollError::Other {
-                info: "Http Client Failed to Create".to_owned(),
+        let client = self
+            .cfn_client(&job.stage.account.id)
+            .map_err(|_| TeardownPollError::Credentials)?;
+
+        // In-order to delete the stack-set, we need to delete all stack instances it has.
+        // I.e We must remove the stack in all regions before we can continue. So we will
+        // start by deleting all regions.
+        let result = client
+            .delete_stack_instances(DeleteStackInstancesInput {
+                accounts: Some(vec![job.stage.account.id.to_string()]),
+                regions: job.stage.account.regions.clone(),
+                retain_stacks: false,
+                stack_set_name: self.stack_name(app, &job.stage),
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| TeardownPollError::Other {
+                info: e.to_string(),
             })?;
-            CloudFormationClient::new_with(http_client, creds, aws_region)
-                .delete_stack(DeleteStackInput {
-                    stack_name: stack_name.clone(),
-                    ..Default::default()
-                })
-                .await
-                .map_err(|_| TeardownPollError::CannotDelete)?;
-        }
 
         Ok(())
     }
     async fn check_teardown(
         &self,
-        _: &Teardown,
+        job: &Teardown,
         _: &RuntimeContext,
-        _: &Application,
+        app: &Application,
     ) -> Result<TeardownStatus, TeardownPollError> {
-        todo!()
+        let client = self
+            .cfn_client(&job.stage.account.id)
+            .map_err(|_| TeardownPollError::Credentials)?;
+
+        let result = client
+            .list_stack_instances(ListStackInstancesInput {
+                max_results: Some(job.stage.account.regions.len() as i64),
+                stack_set_name: self.stack_name(app, &job.stage),
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| TeardownPollError::Other {
+                info: e.to_string(),
+            })?
+            .summaries
+            .unwrap();
+
+        let any_errors = result.iter().any(|s| match s.status.as_ref() {
+            Some(status) => match status.as_str() {
+                "INOPERABLE" => true,
+                _ => false,
+            },
+            None => false,
+        });
+
+        if result.len() == 0 {
+            client
+                .delete_stack_set(DeleteStackSetInput {
+                    stack_set_name: self.stack_name(app, &job.stage),
+                })
+                .await
+                .map_err(|e| TeardownPollError::Other {
+                    info: e.to_string(),
+                })?;
+            Ok(TeardownStatus::Complete)
+        } else {
+            if any_errors {
+                Ok(TeardownStatus::Failed)
+            } else {
+                Ok(TeardownStatus::Pending)
+            }
+        }
     }
 }
 
